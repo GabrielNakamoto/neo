@@ -9,12 +9,12 @@ pub fn build(b: *std.Build) void {
 	const kernel = b.addExecutable(.{
 		.name = "neo",
 		.root_module = b.createModule(.{
-			.root_source_file = b.path("kernel.zig"),
+			.root_source_file = b.path("src/kernel.zig"),
 			.target = target,
 			.optimize = .ReleaseSmall
 		}),
 	});
-	kernel.addAssemblyFile(b.path("kernel_entry.s"));
-	kernel.setLinkerScript(b.path("linker.ld"));
+	kernel.addAssemblyFile(b.path("src/kernel_entry.s"));
+	kernel.setLinkerScript(b.path("src/linker.ld"));
 	b.installArtifact(kernel);
 }

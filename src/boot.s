@@ -14,12 +14,12 @@ KERNEL_OFFSET equ 0x1000
 
 	jmp $ ; hang
 
-%include "asm/16b/disk_load.s"
-%include "asm/16b/print.s"
-%include "asm/16b/print_hex.s"
-%include "asm/gdt.s"
-%include "asm/pm.s"
-%include "asm/print.s"
+%include "src/asm/16b/disk_load.s"
+%include "src/asm/16b/print.s"
+%include "src/asm/16b/print_hex.s"
+%include "src/asm/gdt.s"
+%include "src/asm/pm.s"
+%include "src/asm/print.s"
 
 [bits 16]
 load_kernel:
