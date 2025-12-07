@@ -1,8 +1,8 @@
-export fn kmain() noreturn {
-	const vga_address: usize = 0xb8000;
-	const vga_memory: *u8 = @ptrFromInt(vga_address);
+const video = @import("video.zig");
 
-	vga_memory.* = 'B';
+export fn kmain() noreturn {
+	const msg = "Test";
+	video.print(msg);
 	
 	while (true) {
 		asm volatile("hlt");

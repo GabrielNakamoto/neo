@@ -11,7 +11,7 @@ SECTIONS {
 	- Align sections on 4K byte boundaries
 	- *(.<name>) selects every section with name = <name> from every input file?
 	*/
-	.text 0 : {
+	.text 0 : ALIGN(4K) {
 		*(.text._start)
 		*(.text*)
 	}

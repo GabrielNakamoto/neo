@@ -27,16 +27,17 @@ load_kernel:
 	call print
 
 	mov bx, KERNEL_OFFSET
-	mov dh, 2
+	mov dh, 9
 	mov dl, [BOOT_DRIVE]
+
 	call disk_load
 
 	ret
 
 [bits 32]
 BEGIN_PM:
-	mov ebx, MSG_PM
-	call print_pm
+	; mov ebx, MSG_PM
+	; call print_pm
 
 	call KERNEL_OFFSET
 
@@ -44,7 +45,7 @@ BEGIN_PM:
 
 BOOT_DRIVE 	db 0
 MSG_RM		db "Starting in 16-bit Real Mode", 0
-MSG_PM		db "Switched to 32-bit Protected Mode", 0
+MSG_PM		db "Entering 32-bit Protected Mode", 0
 MSG_KERNEL	db "Loading kernel executable from disk", 0
 
 times 510-($-$$) db 0
