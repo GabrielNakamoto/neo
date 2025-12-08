@@ -3,10 +3,8 @@
 
 My first kernel
 
-*Currently working on:*
-- BIOS Bootloader that supports ELF kernel image
+### Currently working on:
+- UEFI Bootloader
 
-
-
-*Inspiration*
+### Inspiration
 - https://codeberg.org/sfiedler/zig_os
