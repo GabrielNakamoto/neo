@@ -2,4 +2,4 @@
 zig-out/
 bin/
 *.pdf
-*/*.swp
+**/*.swp
