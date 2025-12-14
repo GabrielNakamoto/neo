@@ -41,7 +41,7 @@ fn load_mmap() !uefi.tables.MemoryMapSlice {
 
 // Function ensures that no other boot service calls are made between
 // getMemoryMap() and exitBootServices() that could mutate system mmap
-fn exit_boot_services() !uefi.tables.MemoryMapSlice {
+fn exit_boot_services() !void {
 	console.print("Exiting UEFI boot services");
 	const final_msg = "\n\rThe Matrix is everywhere...\n\rIt is the world that has been pulled over your eyes to blind you from the truth";
 	console.print(final_msg);
@@ -50,7 +50,6 @@ fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 		console.print("Error: exiting UEFI boot services");
 		return err;
 	};
-	return final_mmap;
 }
 
 fn bootloader() !void {
@@ -69,7 +68,7 @@ fn bootloader() !void {
 	var kernel_entry_vaddr: u64 = undefined;
 	var kernel_base_paddr: u64 = undefined;
 	var kernel_base_vaddr: u64 = undefined;
-	const phdrs = try loader.load_kernel_image(
+	_ = try loader.load_kernel_image(
 		root_filesystem,
 		kernel_path,
 		&kernel_entry_vaddr,
@@ -86,37 +85,20 @@ fn bootloader() !void {
         return err;
     };
 
-	// Keep in mind: no boot service calls from this point, including printing
-	var fmmap = try exit_boot_services();
-	var fmmap_iter = fmmap.iterator();
-	while (fmmap_iter.next()) |descr| {
-		if (descr.type == .loader_data) {
-			var is_segment = false;
-			for (phdrs) |phdr| {
-				if (phdr.type != .LOAD) { continue; }
-				const max_addr = descr.physical_start + (descr.number_of_pages * 4096);
-				if (phdr.paddr >= descr.physical_start and phdr.paddr < max_addr) {
-					descr.virtual_start = phdr.vaddr;
-					is_segment = true;
-					break;
-				}
-			}
-			if (is_segment) {
-				continue;
-			}
-		}
-		// Identity map
-		descr.virtual_start = descr.physical_start;
-	}
+	// Keep in mind: no boot service calls can be made from this point, including printing
+	try exit_boot_services();
 
-	// try runtime_services.setVirtualAddressMap(fmmap);
+	// Pass kernel info such as segment paddrs as ptr in arg register
+	asm volatile (
+		\\ mov %[arg], %%rdi
+		\\ jmpq *%[entry]
+		:
+		: [arg] "r" ('A'),
+		  [entry] "r" (kernel_entry_absolute)
+		: .{ .memory = true }
+	);
 
-	const kernel_entry: *fn () callconv(.c) void = @ptrFromInt(kernel_entry_absolute);
-	kernel_entry();
-
-	while (true) {
-		hlt();
-	}
+	return error.LoadError;
 }
 
 pub fn main() void {

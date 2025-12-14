@@ -17,8 +17,8 @@ inline fn outb(port: u16, byte: u8) void {
 }
 
 // 0x61a0960
-export fn kmain() noreturn {
-	outb(0xE9, 'X');
+export fn kmain(foo: u8) noreturn {
+	outb(0xE9, foo);
 	// uart.init_serial();
 	// uart.serial_print("test");
 
