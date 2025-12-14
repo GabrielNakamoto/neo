@@ -18,19 +18,24 @@ inline fn hlt() void {
 	asm volatile("hlt");
 }
 
-fn load_mmap(
-	mmap_info: *uefi.tables.MemoryMapInfo
-) !uefi.tables.MemoryMapSlice {
-	mmap_info.* = try boot_services.getMemoryMapInfo();
+fn load_mmap() !uefi.tables.MemoryMapSlice {
+	const mmap_info = boot_services.getMemoryMapInfo() catch |err| {
+		console.print("Error: retrieving UEFI memory map info");
+		return err;
+	};
+
 	const mmap_size: usize = mmap_info.len * mmap_info.descriptor_size;
 
-	console.printf("Size of mmap: {}", .{mmap_size});
-
-	const mmap_buffer = boot_services.allocatePool(.loader_data, mmap_size + 128) catch |err| {
+	// console.printf("Size of mmap: {}", .{mmap_size});
+	const mmap_buffer = boot_services.allocatePool(.boot_services_data, mmap_size + 128) catch |err| {
 		console.print("Error: Allocating memory map buffer");
 		return err;
 	};
-	return try boot_services.getMemoryMap(mmap_buffer);
+
+	return boot_services.getMemoryMap(mmap_buffer) catch |err| {
+		console.print("Error: getMemoryMap() UEFI call");
+		return err;
+	};
 }
 
 fn display_mmap(mmap: *const uefi.tables.MemoryMapSlice) void {
@@ -48,6 +53,17 @@ fn display_mmap(mmap: *const uefi.tables.MemoryMapSlice) void {
 			console.printf("Memory type: {s}, Pages Available: {}", .{@tagName(tp), pages});
 		}
 	}
+}
+
+// Function ensures that no other boot service calls are made that could
+// make memory map stale
+fn exit_boot_services() !void {
+	console.print("Exiting UEFI boot services... This is goodbye");
+	const final_mmap = try load_mmap();
+	boot_services.exitBootServices(uefi.handle, final_mmap.info.key) catch |err| {
+		console.print("Error: exiting UEFI boot services");
+		return err;
+	};
 }
 
 // https://wiki.osdev.org/A20_Line#Fast_A20_Gate
@@ -71,8 +87,7 @@ fn bootloader() !void {
 
 	// Load memory map
 	const KERNEL_SIZE: u64 = 4488;
-	var mmap_info: uefi.tables.MemoryMapInfo = undefined;
-	var mmap = try load_mmap(&mmap_info);
+	var mmap = try load_mmap();
 	display_mmap(&mmap);
 
 	console.print("Finding free space for kernel image");
@@ -88,7 +103,8 @@ fn bootloader() !void {
 			}
 		}
 	}
-	// try boot_services.freePool(@ptrCast(&mmap));
+	boot_services.freePool(@ptrCast(mmap.ptr)) catch {};
+
 	console.printf("Kernel physical addr chosen: 0x{x}", .{base_addr});
 	// try display_mmap(&mmap);
 
@@ -105,26 +121,13 @@ fn bootloader() !void {
 	// const kernel_entry: *const fn () callconv(.c) void = @ptrFromInt(kernel_start);
 	// kernel_entry()
 
+	console.print("Disabling watchdog timer");
 	boot_services.setWatchdogTimer(0, 0, null) catch |err| {
         console.print("Error: Disabling watchdog timer failed");
         return err;
     };
 
-	while (true) {
-		if (boot_services.exitBootServices(uefi.handle, mmap_info.key)) {
-			break;
-		} else |err| switch (err) {
-			error.InvalidParameter => {
-				console.print("Retrying exit boot services");
-				continue;
-			},
-			error.Unexpected => {
-				console.print("Error: unexpected error from exitBootServices() call");
-				return err;
-			},
-		}
-	}
-
+	try exit_boot_services();
 
 	while (true) {
 		hlt();
