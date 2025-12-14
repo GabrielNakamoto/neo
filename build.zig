@@ -63,6 +63,10 @@ pub fn build(b: *std.Build) void {
 	);
 
 	const qemu_cmd = b.addSystemCommand(&.{"qemu-system-x86_64"});
+	qemu_cmd.addArg("-serial");
+	qemu_cmd.addArg("mon:stdio");
+	qemu_cmd.addArg("-s");
+
 	const ocp = b.path("OVMF.fd");
 	const oc = boot_dir.addCopyFile(
 		ocp,

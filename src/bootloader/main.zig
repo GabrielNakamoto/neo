@@ -43,7 +43,7 @@ fn load_mmap() !uefi.tables.MemoryMapSlice {
 // make memory map stale
 fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 	console.print("Exiting UEFI boot services");
-	const final_msg = comptime "\n\rThe Matrix is everywhere...\n\rIt is the world that has been pulled over your eyes to blind you from the truth";
+	const final_msg = "\n\rThe Matrix is everywhere...\n\rIt is the world that has been pulled over your eyes to blind you from the truth";
 	console.print(final_msg);
 	const final_mmap = try load_mmap();
 	boot_services.exitBootServices(uefi.handle, final_mmap.info.key) catch |err| {
@@ -53,23 +53,11 @@ fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 	return final_mmap;
 }
 
-// https://wiki.osdev.org/A20_Line#Fast_A20_Gate
-inline fn fast_a20_gate() void {
-	asm volatile (
-		\\ in al, 0x92
-		\\ or al, 2
-		\\ out 0x92, al
-	);
-}
-
 fn bootloader() !void {
-	// fast_a20_gate();
-	// TODO: better error handling as usual
 	const uefi_table = uefi.system_table;
 
+	// Initialize service pointers
 	console.out = uefi_table.con_out.?;
-
-	// Set service pointers
 	boot_services = uefi_table.boot_services.?;
 	runtime_services = uefi_table.runtime_services;
 
@@ -109,7 +97,6 @@ fn bootloader() !void {
 	);
 	console.printf("Kernel virtual address: 0x{x}, Kernel entry address: 0x{x}", .{kernel_virtual_start, kernel_entry_addr});
 
-	const kernel_entry: *const fn () callconv(.c) void = @ptrFromInt(kernel_entry_addr);
 
 	console.print("Disabling watchdog timer");
 	boot_services.setWatchdogTimer(0, 0, null) catch |err| {
@@ -123,14 +110,16 @@ fn bootloader() !void {
 	while (fmmap_iter.next()) |descr| {
 		if (descr.type == .loader_data) {
 			// This should be the descriptor for the kernel segments that were loaded
-			// We need to update its virtual address in place
 			descr.virtual_start = kernel_virtual_start;
-
-			try runtime_services.setVirtualAddressMap(fmmap);
-			break;
+		} else {
+			// Identity map
+			descr.virtual_start = descr.physical_start;
 		}
 	}
 
+	try runtime_services.setVirtualAddressMap(fmmap);
+
+	const kernel_entry: *const fn () callconv(.c) void = @ptrFromInt(kernel_entry_addr);
 	kernel_entry();
 
 	while (true) {
