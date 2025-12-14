@@ -13,6 +13,7 @@ const std = @import("std");
 const expect = std.testing.expect;
 
 var boot_services: *uefi.tables.BootServices = undefined;
+var runtime_services: *uefi.tables.RuntimeServices = undefined;
 
 inline fn hlt() void {
 	asm volatile("hlt");
@@ -38,32 +39,18 @@ fn load_mmap() !uefi.tables.MemoryMapSlice {
 	};
 }
 
-fn display_mmap(mmap: *const uefi.tables.MemoryMapSlice) void {
-	var mmap_iter = mmap.iterator();
-	var type_pages = std.mem.zeroes([@typeInfo(uefi.tables.MemoryType).@"enum".fields.len]u64);
-
-	while (mmap_iter.next()) |descr| {
-		const pages = descr.number_of_pages;
-		type_pages[@intFromEnum(descr.type)] += pages;
-	}
-
-	for (type_pages, 0..) |pages, tp_| {
-		if (pages > 0) {
-			const tp: uefi.tables.MemoryType = @enumFromInt(tp_);
-			console.printf("Memory type: {s}, Pages Available: {}", .{@tagName(tp), pages});
-		}
-	}
-}
-
 // Function ensures that no other boot service calls are made that could
 // make memory map stale
-fn exit_boot_services() !void {
-	console.print("Exiting UEFI boot services... This is goodbye");
+fn exit_boot_services() !uefi.tables.MemoryMapSlice {
+	console.print("Exiting UEFI boot services");
+	const final_msg = comptime "\n\rThe Matrix is everywhere...\n\rIt is the world that has been pulled over your eyes to blind you from the truth";
+	console.print(final_msg);
 	const final_mmap = try load_mmap();
 	boot_services.exitBootServices(uefi.handle, final_mmap.info.key) catch |err| {
 		console.print("Error: exiting UEFI boot services");
 		return err;
 	};
+	return final_mmap;
 }
 
 // https://wiki.osdev.org/A20_Line#Fast_A20_Gate
@@ -84,11 +71,11 @@ fn bootloader() !void {
 
 	// Set service pointers
 	boot_services = uefi_table.boot_services.?;
+	runtime_services = uefi_table.runtime_services;
 
 	// Load memory map
 	const KERNEL_SIZE: u64 = 4488;
 	var mmap = try load_mmap();
-	display_mmap(&mmap);
 
 	console.print("Finding free space for kernel image");
 	var mmap_iter = mmap.iterator();
@@ -104,22 +91,25 @@ fn bootloader() !void {
 		}
 	}
 	boot_services.freePool(@ptrCast(mmap.ptr)) catch {};
-
 	console.printf("Kernel physical addr chosen: 0x{x}", .{base_addr});
-	// try display_mmap(&mmap);
 
 	// Find kernel image
 	const kernel_path: [*:0]const u16 = std.unicode.utf8ToUtf16LeStringLiteral("\\kernel.elf");
 	const fsp = try boot_services.locateProtocol(uefi.protocol.SimpleFileSystem, null);
 	const root_filesystem = try fsp.?.openVolume();
 
-	// var kernel_entry_address: u64 = undefined;
-	// var kernel_entry: *const fn () callconv(.c) void = undefined;
-	var kernel_start: u64 = undefined;
-	try loader.load_kernel_image(root_filesystem, kernel_path, base_addr, &kernel_start);
+	var kernel_virtual_start: u64 = undefined;
+	var kernel_entry_addr: u64 = undefined;
+	try loader.load_kernel_image(
+		root_filesystem,
+		kernel_path,
+		base_addr,
+		&kernel_virtual_start,
+		&kernel_entry_addr
+	);
+	console.printf("Kernel virtual address: 0x{x}, Kernel entry address: 0x{x}", .{kernel_virtual_start, kernel_entry_addr});
 
-	// const kernel_entry: *const fn () callconv(.c) void = @ptrFromInt(kernel_start);
-	// kernel_entry()
+	const kernel_entry: *const fn () callconv(.c) void = @ptrFromInt(kernel_entry_addr);
 
 	console.print("Disabling watchdog timer");
 	boot_services.setWatchdogTimer(0, 0, null) catch |err| {
@@ -127,7 +117,21 @@ fn bootloader() !void {
         return err;
     };
 
-	try exit_boot_services();
+	// Keep in mind: no boot service calls from this point, including printing
+	var fmmap = try exit_boot_services();
+	var fmmap_iter = fmmap.iterator();
+	while (fmmap_iter.next()) |descr| {
+		if (descr.type == .loader_data) {
+			// This should be the descriptor for the kernel segments that were loaded
+			// We need to update its virtual address in place
+			descr.virtual_start = kernel_virtual_start;
+
+			try runtime_services.setVirtualAddressMap(fmmap);
+			break;
+		}
+	}
+
+	kernel_entry();
 
 	while (true) {
 		hlt();

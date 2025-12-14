@@ -9,11 +9,12 @@ var boot_services: *uefi.tables.BootServices = undefined;
 // Then fills it with bytes read from file starting at provided position
 fn allocate_and_read(
 	file: *uefi.protocol.File,
+	comptime allocate_type: uefi.tables.MemoryType,
 	position: u64,
 	size: u32,
 ) ![]u8 {
 	try file.setPosition(position);
-	const buffer = try boot_services.allocatePool(.loader_data, size);
+	const buffer = try boot_services.allocatePool(allocate_type, size);
 	_ = try file.read(buffer);
 	return buffer;
 }
@@ -47,8 +48,9 @@ fn load_elf_segment(
 pub fn load_kernel_image(
 	root_filesystem: *const uefi.protocol.File,
 	kernel_path: [*:0]const u16,
-	kernel_base_addr: u64,
-	kernel_start_addr: *u64,
+	kernel_phaddr: u64,
+	kernel_vaddr: *u64,
+	kernel_entry: *u64,
 ) !void {
 	// Populate runtime UEFI pointers
 	boot_services = uefi.system_table.boot_services.?;
@@ -62,10 +64,12 @@ pub fn load_kernel_image(
 	console.print("Located kernel image");
 
 	// Load ELF header and program headers into memory
-	const ehdr_buffer = try allocate_and_read(kernel, 0, 64);
+	// Use boot_services_data because loader_data should be reserved for kernel
+	const ehdr_buffer = try allocate_and_read(kernel, .boot_services_data, 0, 64);
 	const ehdr: *elf.Elf64.Ehdr = @ptrCast(@alignCast(ehdr_buffer));
+	kernel_entry.* = ehdr.entry;
 
-	const phdrs_buffer = try allocate_and_read(kernel, ehdr.phoff, ehdr.phentsize * ehdr.phnum);
+	const phdrs_buffer = try allocate_and_read(kernel, .boot_services_data, ehdr.phoff, ehdr.phentsize * ehdr.phnum);
 	const phdrs: [*]elf.Elf64.Phdr = @ptrCast(@alignCast(phdrs_buffer));
 	console.print("Loaded kernel ELF headers into memory");
 
@@ -80,8 +84,8 @@ pub fn load_kernel_image(
 		if (phdrs[index].type == .LOAD) {
 			if (! entry_segment_found) {
 				entry_segment_found = true;
-				kernel_start_addr.* = phdrs[index].vaddr;
-				vir_to_phys = phdrs[index].vaddr - kernel_base_addr;
+				kernel_vaddr.* = phdrs[index].vaddr;
+				vir_to_phys = phdrs[index].vaddr - kernel_phaddr;
 			}
 			try load_elf_segment(kernel, &phdrs[index], phdrs[index].vaddr - vir_to_phys);
 		}
