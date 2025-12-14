@@ -66,14 +66,20 @@ fn bootloader() !void {
 	const fsp = try boot_services.locateProtocol(uefi.protocol.SimpleFileSystem, null);
 	const root_filesystem = try fsp.?.openVolume();
 
-	var kernel_entry_addr: u64 = undefined;
+	var kernel_entry_vaddr: u64 = undefined;
+	var kernel_base_paddr: u64 = undefined;
+	var kernel_base_vaddr: u64 = undefined;
 	const phdrs = try loader.load_kernel_image(
 		root_filesystem,
 		kernel_path,
-		&kernel_entry_addr
+		&kernel_entry_vaddr,
+		&kernel_base_vaddr,
+		&kernel_base_paddr,
 	);
+	const kernel_entry_absolute = kernel_base_paddr + (kernel_entry_vaddr - kernel_base_vaddr);
+	console.printf("Physical kernel entry address: 0x{x}", .{kernel_entry_absolute});
 
-	console.printf("Kernel entry virtual address: 0x{x}", .{kernel_entry_addr});
+	console.printf("Kernel entry virtual address: 0x{x}", .{kernel_entry_vaddr});
 	console.print("Disabling watchdog timer");
 	boot_services.setWatchdogTimer(0, 0, null) catch |err| {
         console.print("Error: Disabling watchdog timer failed");
@@ -103,9 +109,9 @@ fn bootloader() !void {
 		descr.virtual_start = descr.physical_start;
 	}
 
-	try runtime_services.setVirtualAddressMap(fmmap);
+	// try runtime_services.setVirtualAddressMap(fmmap);
 
-	const kernel_entry: *fn () callconv(.c) void = @ptrFromInt(kernel_entry_addr);
+	const kernel_entry: *fn () callconv(.c) void = @ptrFromInt(kernel_entry_absolute);
 	kernel_entry();
 
 	while (true) {

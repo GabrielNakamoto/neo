@@ -61,7 +61,9 @@ fn load_elf_segment(
 pub fn load_kernel_image(
 	root_filesystem: *const uefi.protocol.File,
 	kernel_path: [*:0]const u16,
-	kernel_entry: *u64,
+	kernel_entry_vaddr: *u64,
+	kernel_base_vaddr: *u64,
+	kernel_base_paddr: *u64
 ) ![]elf.Elf64.Phdr {
 	// Populate runtime UEFI pointers
 	boot_services = uefi.system_table.boot_services.?;
@@ -78,26 +80,33 @@ pub fn load_kernel_image(
 	// Use boot_services_data because loader_data should be reserved for kernel
 	const ehdr_buffer = try allocate_and_read(kernel, .boot_services_data, 0, 64);
 	const ehdr = std.mem.bytesAsValue(elf.Elf64.Ehdr, ehdr_buffer);
-	kernel_entry.* = ehdr.entry;
+	kernel_entry_vaddr.* = ehdr.entry;
 
 	const phdrs_buffer = try allocate_and_read(kernel, .boot_services_data, ehdr.phoff, ehdr.phentsize * ehdr.phnum);
 	const phdrs: [*]elf.Elf64.Phdr = @ptrCast(@alignCast(phdrs_buffer)); // Kinda unsafe
 	console.print("Loaded kernel ELF headers into memory");
 
+	// This slice will be reused to return the physical addresses the
+	// segments were placed at during runtime
+	// Reduces uneccessary extra memory allocation at runtime
+	var first_segment = true;
 	const phdrs_slice = phdrs[0..ehdr.phnum];
-	var loaded: u32 = 0;
 	for (phdrs_slice) |*phdr| {
 		if (phdr.type == .LOAD) {
 			const allocated_paddr = try load_elf_segment(kernel, phdr);
-			loaded += 1;
 			phdr.paddr = allocated_paddr;
+
+			if (first_segment) {
+				first_segment = false;
+				kernel_base_vaddr.* = phdr.vaddr;
+				kernel_base_paddr.* = allocated_paddr;
+			}
 		}
 	}
+	console.print("Loaded kernel ELF segments to main memory");
 	for (phdrs_slice, 0..) |phdr, i| {
 		console.printf("Segment {}: vaddr=0x{x}, paddr=0x{x} ", .{i, phdr.vaddr, phdr.paddr});
 	}
-
-	console.print("Loaded kernel ELF segments to main memory");
 	return phdrs_slice;
 }
 

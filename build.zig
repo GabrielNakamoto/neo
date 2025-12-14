@@ -18,6 +18,7 @@ pub fn build(b: *std.Build) void {
 	const kernel_mod = b.createModule(.{
 		.root_source_file = b.path("src/kernel/main.zig"),
 		.target = kernel_target,
+		// .optimize = .Debug,
 		.optimize = .ReleaseSmall,
 		.code_model = .kernel,
 	});
@@ -63,9 +64,12 @@ pub fn build(b: *std.Build) void {
 	);
 
 	const qemu_cmd = b.addSystemCommand(&.{"qemu-system-x86_64"});
-	qemu_cmd.addArg("-serial");
-	qemu_cmd.addArg("mon:stdio");
+	qemu_cmd.addArg("-debugcon");
+	qemu_cmd.addArg("stdio");
+	// qemu_cmd.addArg("-serial");
+	// qemu_cmd.addArg("mon:stdio");
 	qemu_cmd.addArg("-s");
+	// qemu_cmd.addArg("-S");
 
 	const ocp = b.path("OVMF.fd");
 	const oc = boot_dir.addCopyFile(
