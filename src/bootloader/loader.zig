@@ -19,39 +19,50 @@ fn allocate_and_read(
 	return buffer;
 }
 
-// Read PT_LOAD segment directly from kernel image
-// into conventional memory
+// https://wiki.osdev.org/ELF#Loading_ELF_Binaries
+
+// Read PT_LOAD segment directly from kernel image into memory
+// Return physical address where it was placed
 fn load_elf_segment(
 	elf_file: *uefi.protocol.File,
 	phdr: *elf.Elf64.Phdr,
-	segment_physical_address: u64,
-) !void {
+) !usize {
 	// Allocate system memory
 	// Has to be by pages because ELF says so (neater?)
-	const pages_needed = (phdr.filesz + (4095)) / 4096;
-	var segment_buffer: []u8 = &.{};
+
+	// Allocate the amount of memory needed for the segment (memsz)
+	const pages_needed = (phdr.memsz + (4095)) / 4096;
 	const seg_buf = boot_services.allocatePages(
-		.{ .address=@ptrFromInt(segment_physical_address), },
+		.any,
+		// .{ .address=@ptrFromInt(segment_physical_address), },
 		.loader_data,
 		pages_needed
 	) catch |err| {
-		console.printf("Error: allocating buffer for elf segment at phaddr: {}", .{segment_physical_address});
+		console.print("Error: allocating buffer for elf segment");
 		return err;
 	};
-	segment_buffer.ptr = @ptrCast(seg_buf.ptr);
-	segment_buffer.len = seg_buf.len * 4096;
+
+	// Set the length to filesz so we only read the segments file content
+	const segment_buffer = @as([*]u8, @ptrCast(seg_buf.ptr))[0..phdr.filesz];
+
 	//Load the segment into the memory
 	try elf_file.setPosition(phdr.offset);
 	_ = try elf_file.read(segment_buffer);
+
+	// Zero fill padding
+	const rem: [*]u8 = @ptrCast(seg_buf.ptr);
+	for (phdr.filesz..phdr.memsz) |i| {
+		rem[i]=0;
+	}
+	
+	return @intFromPtr(seg_buf.ptr);
 }
 
 pub fn load_kernel_image(
 	root_filesystem: *const uefi.protocol.File,
 	kernel_path: [*:0]const u16,
-	kernel_phaddr: u64,
-	kernel_vaddr: *u64,
 	kernel_entry: *u64,
-) !void {
+) ![]elf.Elf64.Phdr {
 	// Populate runtime UEFI pointers
 	boot_services = uefi.system_table.boot_services.?;
 
@@ -66,30 +77,27 @@ pub fn load_kernel_image(
 	// Load ELF header and program headers into memory
 	// Use boot_services_data because loader_data should be reserved for kernel
 	const ehdr_buffer = try allocate_and_read(kernel, .boot_services_data, 0, 64);
-	const ehdr: *elf.Elf64.Ehdr = @ptrCast(@alignCast(ehdr_buffer));
+	const ehdr = std.mem.bytesAsValue(elf.Elf64.Ehdr, ehdr_buffer);
 	kernel_entry.* = ehdr.entry;
 
 	const phdrs_buffer = try allocate_and_read(kernel, .boot_services_data, ehdr.phoff, ehdr.phentsize * ehdr.phnum);
-	const phdrs: [*]elf.Elf64.Phdr = @ptrCast(@alignCast(phdrs_buffer));
+	const phdrs: [*]elf.Elf64.Phdr = @ptrCast(@alignCast(phdrs_buffer)); // Kinda unsafe
 	console.print("Loaded kernel ELF headers into memory");
 
-	// Load ELF segments into memory at:
-	// offset = first_segment_vaddr - kernel_base_phaddr
-	// segment_address = segment_vaddr - offset
-	// Ensures that each segment is properly offset
-	var index: u32 = 0;
-	var entry_segment_found = false; 
-	var vir_to_phys: u64 = 0;
-	while (index < ehdr.phnum) : (index += 1) {
-		if (phdrs[index].type == .LOAD) {
-			if (! entry_segment_found) {
-				entry_segment_found = true;
-				kernel_vaddr.* = phdrs[index].vaddr;
-				vir_to_phys = phdrs[index].vaddr - kernel_phaddr;
-			}
-			try load_elf_segment(kernel, &phdrs[index], phdrs[index].vaddr - vir_to_phys);
+	const phdrs_slice = phdrs[0..ehdr.phnum];
+	var loaded: u32 = 0;
+	for (phdrs_slice) |*phdr| {
+		if (phdr.type == .LOAD) {
+			const allocated_paddr = try load_elf_segment(kernel, phdr);
+			loaded += 1;
+			phdr.paddr = allocated_paddr;
 		}
 	}
+	for (phdrs_slice, 0..) |phdr, i| {
+		console.printf("Segment {}: vaddr=0x{x}, paddr=0x{x} ", .{i, phdr.vaddr, phdr.paddr});
+	}
+
 	console.print("Loaded kernel ELF segments to main memory");
+	return phdrs_slice;
 }
 

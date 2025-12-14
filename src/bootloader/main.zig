@@ -39,8 +39,8 @@ fn load_mmap() !uefi.tables.MemoryMapSlice {
 	};
 }
 
-// Function ensures that no other boot service calls are made that could
-// make memory map stale
+// Function ensures that no other boot service calls are made between
+// getMemoryMap() and exitBootServices() that could mutate system mmap
 fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 	console.print("Exiting UEFI boot services");
 	const final_msg = "\n\rThe Matrix is everywhere...\n\rIt is the world that has been pulled over your eyes to blind you from the truth";
@@ -61,43 +61,19 @@ fn bootloader() !void {
 	boot_services = uefi_table.boot_services.?;
 	runtime_services = uefi_table.runtime_services;
 
-	// Load memory map
-	const KERNEL_SIZE: u64 = 4488;
-	var mmap = try load_mmap();
-
-	console.print("Finding free space for kernel image");
-	var mmap_iter = mmap.iterator();
-	var base_addr: u64 = 0x1000;
-	while (mmap_iter.next()) |descr| {
-		if (descr.type == .conventional_memory and descr.physical_start > base_addr) {
-			base_addr = descr.physical_start;
-			const pages = descr.number_of_pages;
-			const needed = (KERNEL_SIZE + (4095)) / 4096;
-			if (pages > needed) {
-				break;
-			}
-		}
-	}
-	boot_services.freePool(@ptrCast(mmap.ptr)) catch {};
-	console.printf("Kernel physical addr chosen: 0x{x}", .{base_addr});
-
 	// Find kernel image
 	const kernel_path: [*:0]const u16 = std.unicode.utf8ToUtf16LeStringLiteral("\\kernel.elf");
 	const fsp = try boot_services.locateProtocol(uefi.protocol.SimpleFileSystem, null);
 	const root_filesystem = try fsp.?.openVolume();
 
-	var kernel_virtual_start: u64 = undefined;
 	var kernel_entry_addr: u64 = undefined;
-	try loader.load_kernel_image(
+	const phdrs = try loader.load_kernel_image(
 		root_filesystem,
 		kernel_path,
-		base_addr,
-		&kernel_virtual_start,
 		&kernel_entry_addr
 	);
-	console.printf("Kernel virtual address: 0x{x}, Kernel entry address: 0x{x}", .{kernel_virtual_start, kernel_entry_addr});
 
-
+	console.printf("Kernel entry virtual address: 0x{x}", .{kernel_entry_addr});
 	console.print("Disabling watchdog timer");
 	boot_services.setWatchdogTimer(0, 0, null) catch |err| {
         console.print("Error: Disabling watchdog timer failed");
@@ -109,17 +85,27 @@ fn bootloader() !void {
 	var fmmap_iter = fmmap.iterator();
 	while (fmmap_iter.next()) |descr| {
 		if (descr.type == .loader_data) {
-			// This should be the descriptor for the kernel segments that were loaded
-			descr.virtual_start = kernel_virtual_start;
-		} else {
-			// Identity map
-			descr.virtual_start = descr.physical_start;
+			var is_segment = false;
+			for (phdrs) |phdr| {
+				if (phdr.type != .LOAD) { continue; }
+				const max_addr = descr.physical_start + (descr.number_of_pages * 4096);
+				if (phdr.paddr >= descr.physical_start and phdr.paddr < max_addr) {
+					descr.virtual_start = phdr.vaddr;
+					is_segment = true;
+					break;
+				}
+			}
+			if (is_segment) {
+				continue;
+			}
 		}
+		// Identity map
+		descr.virtual_start = descr.physical_start;
 	}
 
 	try runtime_services.setVirtualAddressMap(fmmap);
 
-	const kernel_entry: *const fn () callconv(.c) void = @ptrFromInt(kernel_entry_addr);
+	const kernel_entry: *fn () callconv(.c) void = @ptrFromInt(kernel_entry_addr);
 	kernel_entry();
 
 	while (true) {
