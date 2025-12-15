@@ -1,6 +1,6 @@
 # NEO
 
-- Simple pedagogical, kernel 
+- Simple, pedagogical kernel 
 - Targets 64-bit x86
 - UEFI Bootloader
 
