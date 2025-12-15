@@ -69,7 +69,6 @@ pub fn build(b: *std.Build) void {
 	// qemu_cmd.addArg("-serial");
 	// qemu_cmd.addArg("mon:stdio");
 	qemu_cmd.addArg("-s");
-	// qemu_cmd.addArg("-S");
 
 	const ocp = b.path("OVMF.fd");
 	const oc = boot_dir.addCopyFile(

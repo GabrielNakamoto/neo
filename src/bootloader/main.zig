@@ -15,6 +15,15 @@ const expect = std.testing.expect;
 var boot_services: *uefi.tables.BootServices = undefined;
 var runtime_services: *uefi.tables.RuntimeServices = undefined;
 
+// Information that kernel requires during initialization
+// Will be passed as ptr in register arg when kernel entry is called
+
+const AddrMap = u128; // Upper half vaddr, lower half paddr
+const BootInfo = struct {
+	segment_maps: []AddrMap,
+	final_mmap: uefi.tables.MemoryMapSlice,
+};
+
 inline fn hlt() void {
 	asm volatile("hlt");
 }
@@ -26,8 +35,6 @@ fn load_mmap() !uefi.tables.MemoryMapSlice {
 	};
 
 	const mmap_size: usize = mmap_info.len * mmap_info.descriptor_size;
-
-	// console.printf("Size of mmap: {}", .{mmap_size});
 	const mmap_buffer = boot_services.allocatePool(.boot_services_data, mmap_size + 128) catch |err| {
 		console.print("Error: Allocating memory map buffer");
 		return err;
@@ -41,7 +48,7 @@ fn load_mmap() !uefi.tables.MemoryMapSlice {
 
 // Function ensures that no other boot service calls are made between
 // getMemoryMap() and exitBootServices() that could mutate system mmap
-fn exit_boot_services() !void {
+fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 	console.print("Exiting UEFI boot services");
 	const final_msg = "\n\rThe Matrix is everywhere...\n\rIt is the world that has been pulled over your eyes to blind you from the truth";
 	console.print(final_msg);
@@ -50,6 +57,7 @@ fn exit_boot_services() !void {
 		console.print("Error: exiting UEFI boot services");
 		return err;
 	};
+	return final_mmap;
 }
 
 fn bootloader() !void {
@@ -68,13 +76,14 @@ fn bootloader() !void {
 	var kernel_entry_vaddr: u64 = undefined;
 	var kernel_base_paddr: u64 = undefined;
 	var kernel_base_vaddr: u64 = undefined;
-	_ = try loader.load_kernel_image(
+	const segment_maps = try loader.load_kernel_image(
 		root_filesystem,
 		kernel_path,
 		&kernel_entry_vaddr,
 		&kernel_base_vaddr,
 		&kernel_base_paddr,
 	);
+
 	const kernel_entry_absolute = kernel_base_paddr + (kernel_entry_vaddr - kernel_base_vaddr);
 	console.printf("Physical kernel entry address: 0x{x}", .{kernel_entry_absolute});
 
@@ -86,14 +95,20 @@ fn bootloader() !void {
     };
 
 	// Keep in mind: no boot service calls can be made from this point, including printing
-	try exit_boot_services();
+	const final_mmap = try exit_boot_services();
 
+	const boot_info = .{
+		.segment_maps = segment_maps,
+		.final_mmap = final_mmap,
+	};
 	// Pass kernel info such as segment paddrs as ptr in arg register
+	// https://ziglang.org/documentation/master/#Assembly
 	asm volatile (
+		// AT&T asm syntax, LLVM inline
 		\\ mov %[arg], %%rdi
 		\\ jmpq *%[entry]
 		:
-		: [arg] "r" ('A'),
+		: [arg] "r" (&boot_info),
 		  [entry] "r" (kernel_entry_absolute)
 		: .{ .memory = true }
 	);

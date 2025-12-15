@@ -4,6 +4,7 @@ const elf = @import("std").elf;
 const uefi = @import("std").os.uefi;
 
 var boot_services: *uefi.tables.BootServices = undefined;
+const AddrMap = u128; // Upper half vaddr, lower half paddr
 
 // Allocates a buffer from UEFI boot service memory pool 
 // Then fills it with bytes read from file starting at provided position
@@ -64,7 +65,7 @@ pub fn load_kernel_image(
 	kernel_entry_vaddr: *u64,
 	kernel_base_vaddr: *u64,
 	kernel_base_paddr: *u64
-) ![]elf.Elf64.Phdr {
+) ![]AddrMap {
 	// Populate runtime UEFI pointers
 	boot_services = uefi.system_table.boot_services.?;
 
@@ -86,27 +87,36 @@ pub fn load_kernel_image(
 	const phdrs: [*]elf.Elf64.Phdr = @ptrCast(@alignCast(phdrs_buffer)); // Kinda unsafe
 	console.print("Loaded kernel ELF headers into memory");
 
-	// This slice will be reused to return the physical addresses the
-	// segments were placed at during runtime
-	// Reduces uneccessary extra memory allocation at runtime
+	// Allocate memory for boot info segment information
+	var segment_maps: [*]AddrMap = @ptrCast(@alignCast(try boot_services.allocatePool(.loader_data, 16 * ehdr.phnum)));
+
 	var first_segment = true;
 	const phdrs_slice = phdrs[0..ehdr.phnum];
-	for (phdrs_slice) |*phdr| {
+	for (phdrs_slice, 0..) |*phdr, i| {
 		if (phdr.type == .LOAD) {
 			const allocated_paddr = try load_elf_segment(kernel, phdr);
-			phdr.paddr = allocated_paddr;
+			var map: u128 = @as(u128, phdr.vaddr) << 64;
+			map |= allocated_paddr;
+			segment_maps[i] = map;
+			// phdr.paddr = allocated_paddr;
 
 			if (first_segment) {
 				first_segment = false;
 				kernel_base_vaddr.* = phdr.vaddr;
 				kernel_base_paddr.* = allocated_paddr;
 			}
+		} else {
+			var map: u128 = @as(u128, phdr.paddr) << 64;
+			map |= phdr.paddr;
+			segment_maps[i] = map;
 		}
 	}
+
 	console.print("Loaded kernel ELF segments to main memory");
 	for (phdrs_slice, 0..) |phdr, i| {
 		console.printf("Segment {}: vaddr=0x{x}, paddr=0x{x} ", .{i, phdr.vaddr, phdr.paddr});
 	}
-	return phdrs_slice;
+
+	return segment_maps[0..ehdr.phnum];
 }
 
