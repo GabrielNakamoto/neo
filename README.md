@@ -1,10 +1,7 @@
-# Neo 
-> "The Matrix is everywhere... It is the world that has been pulled over your eyes to blind you from the truth"
+# NEO
 
-My first kernel
-
-### Currently working on:
+- Simple pedagogical, kernel 
+- Targets 64-bit x86
 - UEFI Bootloader
 
-### Inspiration
-- https://codeberg.org/sfiedler/zig_os
+> "The Matrix is everywhere... It is the world that has been pulled over your eyes to blind you from the truth"
