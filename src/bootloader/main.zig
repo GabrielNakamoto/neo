@@ -6,6 +6,7 @@
 // https://wiki.osdev.org/Memory_management
 
 const console = @import("./console.zig");
+const paging = @import("./paging.zig");
 const loader = @import("./loader.zig");
 const uefi = @import("std").os.uefi;
 const elf = @import("std").elf;
@@ -15,12 +16,9 @@ const expect = std.testing.expect;
 var boot_services: *uefi.tables.BootServices = undefined;
 var runtime_services: *uefi.tables.RuntimeServices = undefined;
 
-// Information that kernel requires during initialization
-// Will be passed as ptr in register arg when kernel entry is called
+const final_msg = "\n\rThe Matrix is everywhere...\n\rIt is the world that has been pulled over your eyes to blind you from the truth";
 
-const AddrMap = u128; // Upper half vaddr, lower half paddr
 const BootInfo = struct {
-	segment_maps: []AddrMap,
 	final_mmap: uefi.tables.MemoryMapSlice,
 };
 
@@ -50,7 +48,6 @@ fn load_mmap() !uefi.tables.MemoryMapSlice {
 // getMemoryMap() and exitBootServices() that could mutate system mmap
 fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 	console.print("Exiting UEFI boot services");
-	const final_msg = "\n\rThe Matrix is everywhere...\n\rIt is the world that has been pulled over your eyes to blind you from the truth";
 	console.print(final_msg);
 	const final_mmap = try load_mmap();
 	boot_services.exitBootServices(uefi.handle, final_mmap.info.key) catch |err| {
@@ -76,7 +73,7 @@ fn bootloader() !void {
 	var kernel_entry_vaddr: u64 = undefined;
 	var kernel_base_paddr: u64 = undefined;
 	var kernel_base_vaddr: u64 = undefined;
-	const segment_maps = try loader.load_kernel_image(
+	const phdrs_slice = try loader.load_kernel_image(
 		root_filesystem,
 		kernel_path,
 		&kernel_entry_vaddr,
@@ -84,21 +81,31 @@ fn bootloader() !void {
 		&kernel_base_paddr,
 	);
 
-	const kernel_entry_absolute = kernel_base_paddr + (kernel_entry_vaddr - kernel_base_vaddr);
-	console.printf("Physical kernel entry address: 0x{x}", .{kernel_entry_absolute});
+	// Set up initial paging tables
+	const pml4_ptr = try paging.allocate_level(boot_services);
+	const pml4: *[512]u64 = @ptrFromInt(pml4_ptr);
+	for (phdrs_slice) |phdr| {
+		if (phdr.type != .LOAD) { continue; }
+		console.printf("Mapping segment address space 0x{x}->0x{x} to 0x{x}->0x{x}", .{phdr.vaddr, phdr.vaddr+phdr.memsz, phdr.paddr, phdr.paddr+phdr.memsz});
+		for (0..phdr.memsz) |i| {
+			try paging.map_addr(phdr.vaddr+i, phdr.paddr+i, pml4, boot_services);
+		}
+	}
 
-	console.printf("Kernel entry virtual address: 0x{x}", .{kernel_entry_vaddr});
 	console.print("Disabling watchdog timer");
 	boot_services.setWatchdogTimer(0, 0, null) catch |err| {
         console.print("Error: Disabling watchdog timer failed");
         return err;
     };
 
+	const kernel_entry_absolute = kernel_base_paddr + (kernel_entry_vaddr - kernel_base_vaddr);
+	console.printf("Physical kernel entry address: 0x{x}", .{kernel_entry_absolute});
+	console.printf("Kernel entry virtual address: 0x{x}", .{kernel_entry_vaddr});
+
 	// Keep in mind: no boot service calls can be made from this point, including printing
 	const final_mmap = try exit_boot_services();
 
 	const boot_info = .{
-		.segment_maps = segment_maps,
 		.final_mmap = final_mmap,
 	};
 	// Pass kernel info such as segment paddrs as ptr in arg register

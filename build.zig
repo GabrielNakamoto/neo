@@ -18,8 +18,8 @@ pub fn build(b: *std.Build) void {
 	const kernel_mod = b.createModule(.{
 		.root_source_file = b.path("src/kernel/main.zig"),
 		.target = kernel_target,
-		// .optimize = .Debug,
-		.optimize = .ReleaseSmall,
+		.optimize = .Debug,
+		// .optimize = .ReleaseSmall,
 		.code_model = .kernel,
 	});
 
@@ -30,6 +30,7 @@ pub fn build(b: *std.Build) void {
 		.use_llvm = true
 	});
 
+	kernel.link_emit_relocs = true;
 	kernel.entry = .disabled;
 	kernel.setLinkerScript(b.path("src/kernel/linker.ld"));
 

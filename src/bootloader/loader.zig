@@ -4,7 +4,6 @@ const elf = @import("std").elf;
 const uefi = @import("std").os.uefi;
 
 var boot_services: *uefi.tables.BootServices = undefined;
-const AddrMap = u128; // Upper half vaddr, lower half paddr
 
 // Allocates a buffer from UEFI boot service memory pool 
 // Then fills it with bytes read from file starting at provided position
@@ -64,8 +63,8 @@ pub fn load_kernel_image(
 	kernel_path: [*:0]const u16,
 	kernel_entry_vaddr: *u64,
 	kernel_base_vaddr: *u64,
-	kernel_base_paddr: *u64
-) ![]AddrMap {
+	kernel_base_paddr: *u64,
+) ![]elf.Elf64.Phdr {
 	// Populate runtime UEFI pointers
 	boot_services = uefi.system_table.boot_services.?;
 
@@ -87,36 +86,27 @@ pub fn load_kernel_image(
 	const phdrs: [*]elf.Elf64.Phdr = @ptrCast(@alignCast(phdrs_buffer)); // Kinda unsafe
 	console.print("Loaded kernel ELF headers into memory");
 
-	// Allocate memory for boot info segment information
-	var segment_maps: [*]AddrMap = @ptrCast(@alignCast(try boot_services.allocatePool(.loader_data, 16 * ehdr.phnum)));
+	// Cleanup
+	defer boot_services.freePool(@alignCast(ehdr_buffer.ptr)) catch {};
+	// defer boot_services.freePool(@alignCast(phdrs_buffer.ptr)) catch {};
 
 	var first_segment = true;
 	const phdrs_slice = phdrs[0..ehdr.phnum];
-	for (phdrs_slice, 0..) |*phdr, i| {
+	for (phdrs_slice) |*phdr| {
 		if (phdr.type == .LOAD) {
 			const allocated_paddr = try load_elf_segment(kernel, phdr);
-			var map: u128 = @as(u128, phdr.vaddr) << 64;
-			map |= allocated_paddr;
-			segment_maps[i] = map;
-			// phdr.paddr = allocated_paddr;
 
 			if (first_segment) {
 				first_segment = false;
 				kernel_base_vaddr.* = phdr.vaddr;
 				kernel_base_paddr.* = allocated_paddr;
 			}
-		} else {
-			var map: u128 = @as(u128, phdr.paddr) << 64;
-			map |= phdr.paddr;
-			segment_maps[i] = map;
+
+			phdr.paddr = allocated_paddr;
 		}
 	}
 
 	console.print("Loaded kernel ELF segments to main memory");
-	for (phdrs_slice, 0..) |phdr, i| {
-		console.printf("Segment {}: vaddr=0x{x}, paddr=0x{x} ", .{i, phdr.vaddr, phdr.paddr});
-	}
-
-	return segment_maps[0..ehdr.phnum];
+	return phdrs_slice;
 }
 

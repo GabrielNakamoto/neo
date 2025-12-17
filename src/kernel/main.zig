@@ -4,11 +4,7 @@ const uefi = @import("std").os.uefi;
 const uart = @import("./uart.zig");
 const elf = @import("std").elf;
 
-// TODO: share this definition between kernel and bootloader
-// code somehow?
-const AddrMap = u128; // Upper half vaddr, lower half paddr
 const BootInfo = struct {
-	segment_maps: []AddrMap,
 	final_mmap: uefi.tables.MemoryMapSlice,
 };
 
@@ -16,20 +12,13 @@ inline fn hlt() void {
 	asm volatile("hlt");
 }
 
-inline fn outb(port: u16, byte: u8) void {
+fn outb(port: u16, byte: u8) void {
 	asm volatile (
 		\\out %[byte], %[port]
 		:
 	 	: [byte] "{al}" (byte),
 		  [port] "{dx}" (port),
 	);
-}
-
-// https://wiki.osdev.org/Paging#64-bit_Paging_2
-// https://wiki.osdev.org/CPU_Registers_x86#Control_Registers
-// Section 4.5: https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf
-
-inline fn get_pml4_table() *u8 {
 }
 
 // Make this a seperate assembly file with function declaration
@@ -52,15 +41,19 @@ inline fn enable_IA32E_paging() void {
 	);
 }
 
-// 0x61a0960
-export fn kmain(boot_info: *BootInfo) noreturn {
-	outb(0xE9, 'X');
-	const len: u8 = @intCast(boot_info.segment_maps.len);
-	outb(0xE9, '0' + len);
+fn debug_print(str: []const u8) void {
+	for (str) |c| {
+		outb(0xE9, c);
+	}
+}
 
-	// enable_IA32E_paging();
-	// uart.init_serial();
-	// uart.serial_print("test");
+// https://dram.page/p/relative-relocs-explained/
+// https://github.com/torvalds/linux/blob/master/arch/x86/boot/compressed/misc.c#L198
+export fn kmain() noreturn {
+	// Pass relocation tables in BootInfo
+	// Use relocation tables to relocate self
+	// Free memory used for relocation tables after
+	outb(0xE9, 'X');
 
 	while (true) {
 		hlt();
