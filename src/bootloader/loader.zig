@@ -20,7 +20,6 @@ fn allocate_and_read(
 }
 
 // https://wiki.osdev.org/ELF#Loading_ELF_Binaries
-
 // Read PT_LOAD segment directly from kernel image into memory
 // Return physical address where it was placed
 fn load_elf_segment(
@@ -63,7 +62,6 @@ pub fn load_kernel_image(
 	kernel_path: [*:0]const u16,
 	kernel_entry_vaddr: *u64,
 	kernel_base_vaddr: *u64,
-	kernel_base_paddr: *u64,
 ) ![]elf.Elf64.Phdr {
 	// Populate runtime UEFI pointers
 	boot_services = uefi.system_table.boot_services.?;
@@ -77,8 +75,8 @@ pub fn load_kernel_image(
 	console.print("Located kernel image");
 
 	// Load ELF header and program headers into memory
-	// Use boot_services_data because loader_data should be reserved for kernel
 	const ehdr_buffer = try allocate_and_read(kernel, .boot_services_data, 0, 64);
+	defer boot_services.freePool(@alignCast(ehdr_buffer.ptr)) catch {};
 	const ehdr = std.mem.bytesAsValue(elf.Elf64.Ehdr, ehdr_buffer);
 	kernel_entry_vaddr.* = ehdr.entry;
 
@@ -86,23 +84,19 @@ pub fn load_kernel_image(
 	const phdrs: [*]elf.Elf64.Phdr = @ptrCast(@alignCast(phdrs_buffer)); // Kinda unsafe
 	console.print("Loaded kernel ELF headers into memory");
 
-	// Cleanup
-	defer boot_services.freePool(@alignCast(ehdr_buffer.ptr)) catch {};
-	// defer boot_services.freePool(@alignCast(phdrs_buffer.ptr)) catch {};
-
+	// Load loadable ELF segments
+	// Reuse phdr slice to build paging tables
 	var first_segment = true;
 	const phdrs_slice = phdrs[0..ehdr.phnum];
 	for (phdrs_slice) |*phdr| {
-		if (phdr.type == .LOAD) {
-			const allocated_paddr = try load_elf_segment(kernel, phdr);
+		if (phdr.type != .LOAD) { continue; }
 
-			if (first_segment) {
-				first_segment = false;
-				kernel_base_vaddr.* = phdr.vaddr;
-				kernel_base_paddr.* = allocated_paddr;
-			}
+		const allocated_paddr = try load_elf_segment(kernel, phdr);
+		phdr.paddr = allocated_paddr;
 
-			phdr.paddr = allocated_paddr;
+		if (first_segment) {
+			first_segment = false;
+			kernel_base_vaddr.* = phdr.vaddr;
 		}
 	}
 

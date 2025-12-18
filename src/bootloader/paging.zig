@@ -36,9 +36,7 @@ pub fn allocate_level(boot_services: *uefi.tables.BootServices) !u64 {
 	return @intFromPtr(level_buffer.ptr);
 }
 
-// Allocates memory for and fills paging tables
-// as necessary to have a page entry mapping
-// vaddr -> paddr
+// Allocates memory for, and fills paging tables as necessary to have a page entry, mapping vaddr -> paddr
 // Basically ported from here: https://blog.llandsmeer.com/tech/2019/07/21/uefi-x64-userland.html
 pub fn map_addr(vaddr: u64, paddr: u64, pml4: *PagingLevel, boot_services: *uefi.tables.BootServices) !void {
 	const flags = PRESENT_FLAG | RW_FLAG | USR_FLAG;

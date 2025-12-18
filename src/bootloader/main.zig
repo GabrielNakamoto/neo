@@ -70,27 +70,22 @@ fn bootloader() !void {
 	const fsp = try boot_services.locateProtocol(uefi.protocol.SimpleFileSystem, null);
 	const root_filesystem = try fsp.?.openVolume();
 
+	// Load kernel segments
 	var kernel_entry_vaddr: u64 = undefined;
-	var kernel_base_paddr: u64 = undefined;
 	var kernel_base_vaddr: u64 = undefined;
 	const phdrs_slice = try loader.load_kernel_image(
 		root_filesystem,
 		kernel_path,
 		&kernel_entry_vaddr,
 		&kernel_base_vaddr,
-		&kernel_base_paddr,
 	);
 	
 	// Set up initial paging tables
 	const pml4_ptr = try paging.allocate_level(boot_services);
 	const pml4: *paging.PagingLevel = @ptrFromInt(pml4_ptr);
 
-	//var addr: u32 = 0;
-	// Identity map 128 Mib
-	console.printf("Identity mapping memory 0x0->0x{x}", .{128*1024*1024});
-	//while (addr < 128*1024*1024) : (addr += 4096) {
-		//try paging.map_addr(addr, addr, pml4, boot_services);
-	//}
+ 
+ 	// Identity map relevant memory map sections
 	const mmap = try load_mmap();
 	var mmap_iter = mmap.iterator();
 	while (mmap_iter.next()) |descr| {
@@ -103,6 +98,7 @@ fn bootloader() !void {
 		}
 	}
 
+	// Map kernel segments
 	for (phdrs_slice) |phdr| {
 		if (phdr.type != .LOAD) { continue; }
 		console.printf("Mapping segment address space 0x{x}->0x{x} to 0x{x}->0x{x}", .{phdr.vaddr, phdr.vaddr+phdr.memsz, phdr.paddr, phdr.paddr+phdr.memsz});
@@ -111,16 +107,13 @@ fn bootloader() !void {
 			try paging.map_addr(phdr.vaddr+offset, phdr.paddr+offset, pml4, boot_services);
 		}
 	}
+	boot_services.freePool(@alignCast(@ptrCast(phdrs_slice.ptr))) catch {};
 
 	console.print("Disabling watchdog timer");
 	boot_services.setWatchdogTimer(0, 0, null) catch |err| {
         console.print("Error: Disabling watchdog timer failed");
         return err;
     };
-
-	const kernel_entry_absolute = kernel_base_paddr + (kernel_entry_vaddr - kernel_base_vaddr);
-	console.printf("Physical kernel entry address: 0x{x}", .{kernel_entry_absolute});
-	console.printf("Kernel entry virtual address: 0x{x}", .{kernel_entry_vaddr});
 
 	// Keep in mind: no boot service calls can be made from this point, including printing
 	const final_mmap = try exit_boot_services();
@@ -130,9 +123,7 @@ fn bootloader() !void {
 
 	paging.enable(pml4_ptr);
 	// Pass kernel info such as segment paddrs as ptr in arg register
-	// https://ziglang.org/documentation/master/#Assembly
 	asm volatile (
-		// AT&T asm syntax, LLVM inline
 		\\ mov %[arg], %%rdi
 		\\ jmpq *%[entry]
 		:
@@ -145,7 +136,6 @@ fn bootloader() !void {
 }
 
 pub fn main() void {
-	// TODO: error handle
 	bootloader() catch |err| {
 		console.printf("{s}", .{@errorName(err)});
 		while (true) {

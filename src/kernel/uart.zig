@@ -1,8 +1,8 @@
 // https://wiki.osdev.org/Serial_Ports
 
-const COM1: u16 = 0xf38;
+const COM1: u16 = 0x3f8;
 
-inline fn inb(port: u16) u8 {
+pub inline fn inb(port: u16) u8 {
 	return asm volatile (
 		\\in %[port], %[ret]
 		: [ret] "={al}" (-> u8)
@@ -10,7 +10,7 @@ inline fn inb(port: u16) u8 {
 	);
 }
 
-inline fn outb(port: u16, byte: u8) void {
+pub fn outb(port: u16, byte: u8) void {
 	asm volatile (
 		\\out %[byte], %[port]
 		:
@@ -26,15 +26,15 @@ pub fn init_serial() void {
 	outb(COM1 + 0, 0x03);
 	outb(COM1 + 1, 0x00);
 	outb(COM1 + 3, 0x03);
-	outb(COM1 + 2, 0xC7);
-	outb(COM1 + 4, 0x0B);
+	outb(COM1 + 2, 0xc7);
+	outb(COM1 + 4, 0x0b);
 }
 
-fn is_transmit_empty() bool {
+inline fn is_transmit_empty() bool {
 	return (inb(COM1 + 5) & 0x20) != 0;
 }
 
-pub fn serial_putc(c: u8) void {
+pub inline fn serial_putc(c: u8) void {
 	while (! is_transmit_empty()) {}
 	outb(COM1, c);
 }
