@@ -3,24 +3,26 @@
 // Section 4.5: https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf
 // https://blog.zolutal.io/understanding-paging/
 
-
 // Set up initial page tables:
 // - Identity maps some memory for early kernel allocator?
 // - Maps the kernel data
-
 const std = @import("std");
 const uefi = @import("std").os.uefi;
 const elf = @import("std").elf;
 const console = @import("./console.zig");
 
-const PagingLevel = [512]u64;
+pub const PagingLevel = [512]u64;
 const PAGE_ADDR_MASK: u64 =  0x000ffffffffff000; // 52 bit, page aligned address
 
 const PRESENT_FLAG 	= 1 << 0;
 const RW_FLAG 		= 1 << 1;
 const USR_FLAG 		= 1 << 2;
 
-pub fn enable() void {
+pub fn enable(pml4: u64) void {
+	asm volatile (
+		\\ mov %[pml4], %%cr3
+		:: [pml4] "r" (pml4 & PAGE_ADDR_MASK)
+	);
 }
 
 pub fn allocate_level(boot_services: *uefi.tables.BootServices) !u64 {
@@ -71,7 +73,5 @@ pub fn map_addr(vaddr: u64, paddr: u64, pml4: *PagingLevel, boot_services: *uefi
 
 	const pt: *PagingLevel = @ptrFromInt(pdt[pd_idx] & PAGE_ADDR_MASK);
 
-	if ((pt[pt_idx] & PRESENT_FLAG) == 0) {
-		pt[pt_idx] = (paddr & PAGE_ADDR_MASK) | flags;
-	}
+	pt[pt_idx] = (paddr & PAGE_ADDR_MASK) | flags;
 }

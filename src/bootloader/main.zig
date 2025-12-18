@@ -80,15 +80,35 @@ fn bootloader() !void {
 		&kernel_base_vaddr,
 		&kernel_base_paddr,
 	);
-
+	
 	// Set up initial paging tables
 	const pml4_ptr = try paging.allocate_level(boot_services);
-	const pml4: *[512]u64 = @ptrFromInt(pml4_ptr);
+	const pml4: *paging.PagingLevel = @ptrFromInt(pml4_ptr);
+
+	//var addr: u32 = 0;
+	// Identity map 128 Mib
+	console.printf("Identity mapping memory 0x0->0x{x}", .{128*1024*1024});
+	//while (addr < 128*1024*1024) : (addr += 4096) {
+		//try paging.map_addr(addr, addr, pml4, boot_services);
+	//}
+	const mmap = try load_mmap();
+	var mmap_iter = mmap.iterator();
+	while (mmap_iter.next()) |descr| {
+		if (descr.type == .loader_data or descr.type == .loader_code or descr.type == .boot_services_data or descr.type == .boot_services_code) {
+			var offset: u64 = descr.physical_start;
+			for (0..descr.number_of_pages) |_| {
+				offset += 4096;
+				try paging.map_addr(offset, offset, pml4, boot_services);
+			}
+		}
+	}
+
 	for (phdrs_slice) |phdr| {
 		if (phdr.type != .LOAD) { continue; }
 		console.printf("Mapping segment address space 0x{x}->0x{x} to 0x{x}->0x{x}", .{phdr.vaddr, phdr.vaddr+phdr.memsz, phdr.paddr, phdr.paddr+phdr.memsz});
-		for (0..phdr.memsz) |i| {
-			try paging.map_addr(phdr.vaddr+i, phdr.paddr+i, pml4, boot_services);
+		var offset: u64 = 0;
+		while (offset < phdr.memsz) : (offset += 4096) {
+			try paging.map_addr(phdr.vaddr+offset, phdr.paddr+offset, pml4, boot_services);
 		}
 	}
 
@@ -104,10 +124,11 @@ fn bootloader() !void {
 
 	// Keep in mind: no boot service calls can be made from this point, including printing
 	const final_mmap = try exit_boot_services();
-
 	const boot_info = .{
 		.final_mmap = final_mmap,
 	};
+
+	paging.enable(pml4_ptr);
 	// Pass kernel info such as segment paddrs as ptr in arg register
 	// https://ziglang.org/documentation/master/#Assembly
 	asm volatile (
@@ -116,7 +137,7 @@ fn bootloader() !void {
 		\\ jmpq *%[entry]
 		:
 		: [arg] "r" (&boot_info),
-		  [entry] "r" (kernel_entry_absolute)
+		  [entry] "r" (kernel_entry_vaddr)
 		: .{ .memory = true }
 	);
 
