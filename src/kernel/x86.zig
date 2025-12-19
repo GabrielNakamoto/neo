@@ -26,3 +26,10 @@ pub inline fn out(port: u16, byte: u8) void {
 		   [port] "{dx}" (port),
 	);
 }
+
+pub inline fn lidt(idt_descriptor: u64) void {
+	asm volatile (
+	\\lidt %[idtr]
+	:: [idtr] "m" (idt_descriptor)
+	);
+}

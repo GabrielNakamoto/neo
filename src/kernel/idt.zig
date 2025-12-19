@@ -1,4 +1,6 @@
 const std = @import("std");
+const x86 = @import("./x86.zig");
+const uart = @import("./uart.zig");
 // Gate Types:
 // 1. Interrupt Gate (specify ISR (Interrupt Service Routine))
 // 2. Trap Gate (Exception handlers)
@@ -18,6 +20,11 @@ const GateDescriptor = packed struct {
 	_2: u32 = 0,
 };
 
+const IDTDescriptor = packed struct {
+	size: u16,
+	offset: u64,
+};
+
 var idt: [256]GateDescriptor = undefined;
 
 pub fn set_gate(index: usize, seg_selector: u16, offset: u64, gate_type: u4) void {
@@ -31,8 +38,17 @@ pub fn set_gate(index: usize, seg_selector: u16, offset: u64, gate_type: u4) voi
 	};
 }
 
-export fn exception_handler() callconv(.naked) void {}
+export fn exception_handler() callconv(.naked) void {
+	x86.out(0x3f8, 'I');
+	x86.hlt();
+}
 
+const IsrFn = *const fn() callconv(.naked) noreturn;
+
+// Defines first 32 Interrupt Service Routines
+// And adds their descriptors to IDT
+// 
+// Zig comptime is goated
 comptime {
 	for (0..32) |idx| {
 		const template = \\.globl isr_{} 
@@ -45,12 +61,16 @@ comptime {
 	}
 }
 
-const IsrFn = *const fn() callconv(.naked) noreturn;
-
-pub const isr_table: [32]IsrFn = blk: {
-	var table: [32]IsrFn = undefined;
-	for(0..32) |i| {
-		table[i] = @extern(IsrFn, .{ .name = std.fmt.comptimePrint("isr_{}", .{i})});
+pub fn load() void {
+	inline for (0..32) |i| {
+		const fn_ptr = @extern(IsrFn, .{ .name = std.fmt.comptimePrint("isr_{}", .{i})});
+		set_gate(i, 0x8, @intFromPtr(fn_ptr), INTERRUPT_GATE);
 	}
-	break :blk table;
-};
+
+	const idt_descriptor: IDTDescriptor = .{
+		.size = (@bitSizeOf(IDTDescriptor) / 8) - 1,
+		.offset = @intFromPtr(&idt)
+	};
+
+	x86.lidt(@intFromPtr(&idt_descriptor));
+}

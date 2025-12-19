@@ -9,14 +9,17 @@ const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
 };
 
-
 export fn kmain() noreturn {
 	gdt.load();
+	idt.load();
 
 	const msg = "Hello, paging!";
 
 	uart.init_serial();
 	uart.serial_print(msg);
+
+	// Should print "Exception!"
+	asm volatile("int3");
 
 	while (true) {
 		x86.hlt();

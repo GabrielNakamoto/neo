@@ -12,7 +12,7 @@ const SegmentDescriptor = packed struct {
 
 const GDTDescriptor = packed struct {
 	size: u16,
-	offset: u48
+	offset: u64
 };
 
 const GDT = packed struct {
@@ -107,7 +107,7 @@ pub fn describe_tss(base: u64, size: u20) void {
 
 pub fn load() void {
 	const gdt_descriptor: GDTDescriptor = .{
-		.offset = @truncate(@intFromPtr(&global_descriptor_table)),
+		.offset = @intFromPtr(&global_descriptor_table),
 		.size = (@bitSizeOf(GDT) / 8) - 1 
 	};
 
