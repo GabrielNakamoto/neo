@@ -2,10 +2,6 @@
 // https://wiki.osdev.org/CPU_Registers_x86#Control_Registers
 // Section 4.5: https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf
 // https://blog.zolutal.io/understanding-paging/
-
-// Set up initial page tables:
-// - Identity maps some memory for early kernel allocator?
-// - Maps the kernel data
 const std = @import("std");
 const uefi = @import("std").os.uefi;
 const elf = @import("std").elf;
@@ -25,6 +21,8 @@ pub fn enable(pml4: u64) void {
 	);
 }
 
+// Allocates a page of memory (512 64-bit entries) using UEFI boot services
+// Zero-fills and returns the physical base address
 pub fn allocate_level(boot_services: *uefi.tables.BootServices) !u64 {
 	const page_buffer = try boot_services.allocatePages(.any, .loader_data, 1);
 	const level_buffer: *[512]u64 = @ptrCast(page_buffer.ptr);

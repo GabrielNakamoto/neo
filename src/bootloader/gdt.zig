@@ -9,6 +9,11 @@ const SegmentDescriptor = packed struct {
 	base_high: u8
 };
 
+const GdtDescriptor = packed struct {
+	size: u16,
+	offset: u48
+};
+
 fn build_segment_descriptor(base: u32, limit: u20, access: u8, flags: u4) SegmentDescriptor {
 	return .{
 		.limit_low = limit & 0xffff,
@@ -29,15 +34,19 @@ const global_descriptor_table = [_]SegmentDescriptor{
 	build_segment_descriptor(0, 0xffff, 0xFA, 0xA)		// User Data
 };
 
-pub fn load(boot_services: *uefi.tables.BootServices) !void {
+pub fn allocate(boot_services: *uefi.tables.BootServices) !GdtDescriptor {
 	const byte_size: usize = global_descriptor_table.len * 8;
 	const buffer = try boot_services.allocatePool(.boot_services_data, byte_size);
 	const buffer_ptr: [*]SegmentDescriptor = @ptrCast(@alignCast(buffer.ptr));
 	@memcpy(buffer_ptr, &global_descriptor_table);
 
-	const gdt_addr = @intFromPtr(buffer.ptr);
-	const gdt_descriptor: u64 = (gdt_addr << 16) | (byte_size - 1);
+	return .{
+		.offset = @intCast(@intFromPtr(buffer.ptr)),
+		.size = byte_size - 1
+	};
+}
 
+pub fn load(gdt_descriptor: GdtDescriptor) void {
 	asm volatile (
 		\\lgdt %[gdtr]
 		:: [gdtr] "m" (gdt_descriptor)

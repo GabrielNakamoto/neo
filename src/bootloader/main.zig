@@ -5,6 +5,7 @@
 // https://en.wikipedia.org/wiki/Memory_map
 // https://wiki.osdev.org/Memory_management
 
+const gdt = @import("./gdt.zig");
 const console = @import("./console.zig");
 const paging = @import("./paging.zig");
 const loader = @import("./loader.zig");
@@ -79,12 +80,13 @@ fn bootloader() !void {
 		&kernel_entry_vaddr,
 		&kernel_base_vaddr,
 	);
+
+	const gdt_descriptor = try gdt.allocate(boot_services);
 	
 	// Set up initial paging tables
 	const pml4_ptr = try paging.allocate_level(boot_services);
 	const pml4: *paging.PagingLevel = @ptrFromInt(pml4_ptr);
 
- 
  	// Identity map relevant memory map sections
 	const mmap = try load_mmap();
 	var mmap_iter = mmap.iterator();
@@ -111,9 +113,10 @@ fn bootloader() !void {
 
 	console.print("Disabling watchdog timer");
 	boot_services.setWatchdogTimer(0, 0, null) catch |err| {
-        console.print("Error: Disabling watchdog timer failed");
-        return err;
+     		console.print("Error: Disabling watchdog timer failed");
+     		return err;
     };
+
 
 	// Keep in mind: no boot service calls can be made from this point, including printing
 	const final_mmap = try exit_boot_services();
@@ -121,8 +124,10 @@ fn bootloader() !void {
 		.final_mmap = final_mmap,
 	};
 
+	// Update paging tables to allow virtual kernel addressing
 	paging.enable(pml4_ptr);
-	// Pass kernel info such as segment paddrs as ptr in arg register
+	gdt.load(gdt_descriptor);
+
 	asm volatile (
 		\\ mov %[arg], %%rdi
 		\\ jmpq *%[entry]
