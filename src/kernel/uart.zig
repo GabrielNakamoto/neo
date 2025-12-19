@@ -1,46 +1,38 @@
 // https://wiki.osdev.org/Serial_Ports
+const x86 = @import("./x86.zig");
+const std = @import("std");
 
 const COM1: u16 = 0x3f8;
 
-pub inline fn inb(port: u16) u8 {
-	return asm volatile (
-		\\in %[port], %[ret]
-		: [ret] "={al}" (-> u8)
-		: [port] "{dx}" (port)
-	);
-}
-
-pub fn outb(port: u16, byte: u8) void {
-	asm volatile (
-		\\out %[byte], %[port]
-		:
-	 	: [byte] "{al}" (byte),
-		  [port] "{dx}" (port),
-	);
-}
-
 // https://wiki.osdev.org/Serial_Ports#Initialization
 pub fn init_serial() void {
-	outb(COM1 + 1, 0x00);
-	outb(COM1 + 3, 0x80);
-	outb(COM1 + 0, 0x03);
-	outb(COM1 + 1, 0x00);
-	outb(COM1 + 3, 0x03);
-	outb(COM1 + 2, 0xc7);
-	outb(COM1 + 4, 0x0b);
+	x86.out(COM1 + 1, 0x00);
+	x86.out(COM1 + 3, 0x80);
+	x86.out(COM1 + 0, 0x03);
+	x86.out(COM1 + 1, 0x00);
+	x86.out(COM1 + 3, 0x03);
+	x86.out(COM1 + 2, 0xc7);
+	x86.out(COM1 + 4, 0x0b);
 }
 
 inline fn is_transmit_empty() bool {
-	return (inb(COM1 + 5) & 0x20) != 0;
+	return (x86.in(COM1 + 5) & 0x20) != 0;
 }
 
 pub inline fn serial_putc(c: u8) void {
 	while (! is_transmit_empty()) {}
-	outb(COM1, c);
+	x86.out(COM1, c);
 }
 
 pub fn serial_print(str: []const u8) void {
 	for (str) |c| {
 		serial_putc(c);
 	}
+}
+
+var format_buf: [128]u8 = undefined;
+
+pub fn serial_printf(comptime format: []const u8, args: anytype) void {
+	const buf = std.fmt.bufPrint(format_buf[0..], format, args) catch unreachable;
+	serial_print(buf);
 }
