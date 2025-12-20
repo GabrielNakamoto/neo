@@ -16,7 +16,7 @@ const expect = std.testing.expect;
 var boot_services: *uefi.tables.BootServices = undefined;
 var runtime_services: *uefi.tables.RuntimeServices = undefined;
 
-const final_msg = "\n\rThe Matrix is everywhere...\n\rIt is the world that has been pulled over your eyes to blind you from the truth";
+const final_msg = "\n\rConventional operating systems are everywhere...\n\rThey are the systems that have been pulled over your eyes to blind you from the truth";
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,

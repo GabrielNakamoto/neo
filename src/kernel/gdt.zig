@@ -72,16 +72,15 @@ const USER   = PRESENT | CODE_OR_DATA | READ_WRITE | USER_LEVEL;
 
 // GDT Entry Flags
 const LONG_CODE = (1 << 1);
-const PROTECTED = (1 << 2);
 const BLOCKS_4K = (1 << 3);
 
 // https://wiki.osdev.org/GDT_Tutorial#Flat_/_Long_Mode_Setup
 var global_descriptor_table: GDT = .{
 	.null_descriptor 	= build_segment_descriptor(0, 0, 0, 0),
 	.kernel_code 			= build_segment_descriptor(0, 0xffff, KERNEL | CODE, 	BLOCKS_4K | LONG_CODE),
-	.kernel_data 			= build_segment_descriptor(0, 0xffff, KERNEL, 				BLOCKS_4K | PROTECTED),
+	.kernel_data 			= build_segment_descriptor(0, 0xffff, KERNEL, 				BLOCKS_4K),
 	.user_code 				= build_segment_descriptor(0, 0xffff, USER | CODE, 		BLOCKS_4K | LONG_CODE),
-	.user_data 				= build_segment_descriptor(0, 0xffff, USER, 					BLOCKS_4K | PROTECTED),
+	.user_data 				= build_segment_descriptor(0, 0xffff, USER, 					BLOCKS_4K),
 	.tss_low					= build_segment_descriptor(0, 0, 0, 0),
 	.tss_high					= build_segment_descriptor(0, 0, 0, 0),
 };
@@ -105,6 +104,30 @@ pub fn describe_tss(base: u64, size: u20) void {
 	};
 }
 
+// Reload segment registers
+fn reloadSegments() void {
+	asm volatile (
+		\\mov $0x10, %%rax
+		\\mov %%rax, %%ds
+		\\mov %%rax, %%es
+		\\mov %%rax, %%fs
+		\\mov %%rax, %%gs
+		\\mov %%rax, %%ss
+		::: .{ .rax = true }
+	);
+}
+
+fn reloadCs() void {
+	asm volatile (
+		\\mov $0x8, %%rax
+		\\push %%rax
+		\\leaq next(%%rip), %%rax
+		\\pushq %%rax
+		\\lretq
+		\\next:
+	);
+}
+
 pub fn load() void {
 	const gdt_descriptor: GDTDescriptor = .{
 		.offset = @intFromPtr(&global_descriptor_table),
@@ -113,4 +136,7 @@ pub fn load() void {
 
 	describe_tss(@intFromPtr(&task_state_segment), (@bitSizeOf(TSS) / 8) - 1);
 	x86.lgdt(@intFromPtr(&gdt_descriptor));
+
+	reloadSegments();
+	reloadCs();
 }

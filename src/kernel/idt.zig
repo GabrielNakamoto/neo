@@ -4,8 +4,8 @@ const uart = @import("./uart.zig");
 // Gate Types:
 // 1. Interrupt Gate (specify ISR (Interrupt Service Routine))
 // 2. Trap Gate (Exception handlers)
-const INTERRUPT_GATE 	= 0xE;
-const TRAP_GATE				= 0xF;
+pub const INTERRUPT_GATE 	= 0xE;
+pub const TRAP_GATE				= 0xF;
 
 const GateDescriptor = packed struct {
 	offset_low: u16,
@@ -38,37 +38,9 @@ pub fn set_gate(index: usize, seg_selector: u16, offset: u64, gate_type: u4) voi
 	};
 }
 
-export fn exception_handler() callconv(.naked) void {
-	x86.out(0x3f8, 'I');
-	x86.hlt();
-}
-
-const IsrFn = *const fn() callconv(.naked) noreturn;
-
-// Defines first 32 Interrupt Service Routines
-// And adds their descriptors to IDT
-// 
-// Zig comptime is goated
-comptime {
-	for (0..32) |idx| {
-		const template = \\.globl isr_{} 
-		\\isr_{}:
-		\\  call exception_handler
-		\\  iretq
-		;
-
-		asm (std.fmt.comptimePrint(template, .{idx, idx}));
-	}
-}
-
 pub fn load() void {
-	inline for (0..32) |i| {
-		const fn_ptr = @extern(IsrFn, .{ .name = std.fmt.comptimePrint("isr_{}", .{i})});
-		set_gate(i, 0x8, @intFromPtr(fn_ptr), INTERRUPT_GATE);
-	}
-
 	const idt_descriptor: IDTDescriptor = .{
-		.size = (@bitSizeOf(IDTDescriptor) / 8) - 1,
+		.size = (@bitSizeOf(IDTDescriptor) * idt.len / 8) - 1,
 		.offset = @intFromPtr(&idt)
 	};
 
