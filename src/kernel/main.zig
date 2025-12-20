@@ -1,4 +1,4 @@
-const x86 = @import("./x86.zig");
+const cpu = @import("./cpu.zig");
 const interrupt = @import("./interrupt.zig");
 const uefi = @import("std").os.uefi;
 const gdt = @import("./gdt.zig");
@@ -12,16 +12,15 @@ const BootInfo = struct {
 
 export fn kmain() noreturn {
 	gdt.load();
+	interrupt.initialize();
 
-	const msg = "Hello, paging!";
+	const msg = "Follow the white rabbit.\n\r";
 
 	uart.init_serial();
-	uart.serial_print(msg);
+	uart.print("\x1B[2J\x1B[H");
+	uart.print(msg);
 
-	interrupt.initialize();
 	asm volatile("int $3");
 
-	while (true) {
-		x86.hlt();
-	}
+	cpu.hang();
 }

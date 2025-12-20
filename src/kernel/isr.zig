@@ -1,35 +1,80 @@
 const std = @import("std");
 const idt = @import("./idt.zig");
-const x86 = @import("./x86.zig");
+const cpu = @import("./cpu.zig");
 const uart = @import("./uart.zig");
 
-export fn exception_handler() callconv(.naked) void {
-	x86.out(0x3f8, 'I');
-	x86.hlt();
+// ISR Stack State
+const Context = packed struct {
+	// Pushed in bootstrap isr
+	registers: Registers,
+	vector: u64,
+
+	// Pushed by CPU
+	error_code: u64,
+	rip: u64,
+	cs: u64,
+	rflags: u64,
+};
+
+pub export var context: *volatile Context = undefined;
+
+// General purpose x86-64 registers
+const Registers = packed struct {
+	r8: u64,
+	r9: u64,
+	r10: u64,
+	r11: u64,
+	r12: u64,
+	r13: u64,
+	r14: u64,
+	r15: u64,
+	rax: u64,
+	rbx: u64,
+	rcx: u64,
+	rdx: u64,
+	rsi: u64,
+	rdi: u64,
+	rbp: u64,
+	rsp: u64,
+};
+
+export fn exception_handler() callconv(.c) void {
+	const vector: u8 = @truncate(context.vector);
+
+	uart.print("Exception! vector: ");
+	cpu.out(0x3f8, '0' + vector);
+	cpu.hlt();
 }
 
-const IsrFn = *const fn() callconv(.naked) noreturn;
+const IsrFn = *const fn() callconv(.naked) void;
 
-// Defines first 32 Interrupt Service Routines
-// And adds their descriptors to IDT
-// 
-// Zig comptime is goated
-comptime {
-	for (0..32) |idx| {
-		const template = \\.globl isr_{} 
-		\\.type isr_{}, @function
-		\\isr_{}:
-		\\  call exception_handler
-		\\  iretq
-		;
+pub fn generateIsr(comptime vector: u64) IsrFn {
+	return struct {
+		fn handler() callconv(.naked) void {
+			asm volatile(
+				\\pushq %[vector]
+				:: [vector] "i" (vector)
+			);
+			cpu.push_all();	
 
-		asm (std.fmt.comptimePrint(template, .{idx, idx, idx}));
-	}
+			asm volatile (
+				\\mov %esp, context
+				\\call exception_handler
+			);
+
+			cpu.pop_all();
+
+			asm volatile(
+				\\add $0x10, %%rsp
+				\\iretq
+			);
+		}
+	}.handler;
 }
 
 pub fn install() void {
-	inline for (0..32) |i| {
-		const fn_ptr = @extern(IsrFn, .{ .name = std.fmt.comptimePrint("isr_{}", .{i})});
+	inline for (0..48) |i| {
+		const fn_ptr = generateIsr(i);
 		idt.set_gate(i, 0x8, @intFromPtr(fn_ptr), idt.INTERRUPT_GATE);
 	}
 }

@@ -1,5 +1,5 @@
 const uefi = @import("std").os.uefi;
-const x86 = @import("./x86.zig");
+const cpu = @import("./cpu.zig");
 
 const SegmentDescriptor = packed struct {
 	limit_low: u16,
@@ -135,7 +135,7 @@ pub fn load() void {
 	};
 
 	describe_tss(@intFromPtr(&task_state_segment), (@bitSizeOf(TSS) / 8) - 1);
-	x86.lgdt(@intFromPtr(&gdt_descriptor));
+	cpu.lgdt(@intFromPtr(&gdt_descriptor));
 
 	reloadSegments();
 	reloadCs();

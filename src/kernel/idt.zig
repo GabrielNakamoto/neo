@@ -1,5 +1,5 @@
 const std = @import("std");
-const x86 = @import("./x86.zig");
+const cpu = @import("./cpu.zig");
 const uart = @import("./uart.zig");
 // Gate Types:
 // 1. Interrupt Gate (specify ISR (Interrupt Service Routine))
@@ -44,5 +44,5 @@ pub fn load() void {
 		.offset = @intFromPtr(&idt)
 	};
 
-	x86.lidt(@intFromPtr(&idt_descriptor));
+	cpu.lidt(@intFromPtr(&idt_descriptor));
 }
