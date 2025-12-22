@@ -2,6 +2,7 @@ const console = @import("./console.zig");
 const std = @import("std");
 const elf = @import("std").elf;
 const uefi = @import("std").os.uefi;
+const paging = @import("./paging.zig");
 
 var boot_services: *uefi.tables.BootServices = undefined;
 
@@ -19,50 +20,11 @@ fn allocate_and_read(
 	return buffer;
 }
 
-// https://wiki.osdev.org/ELF#Loading_ELF_Binaries
-// Read PT_LOAD segment directly from kernel image into memory
-// Return physical address where it was placed
-fn load_elf_segment(
-	elf_file: *uefi.protocol.File,
-	phdr: *elf.Elf64.Phdr,
-) !usize {
-	// Allocate system memory
-	// Has to be by pages because ELF says so (neater?)
-
-	// Allocate the amount of memory needed for the segment (memsz)
-	const pages_needed = (phdr.memsz + (4095)) / 4096;
-	const seg_buf = boot_services.allocatePages(
-		.any,
-		// .{ .address=@ptrFromInt(segment_physical_address), },
-		.loader_data,
-		pages_needed
-	) catch |err| {
-		console.print("Error: allocating buffer for elf segment");
-		return err;
-	};
-
-	// Set the length to filesz so we only read the segments file content
-	const segment_buffer = @as([*]u8, @ptrCast(seg_buf.ptr))[0..phdr.filesz];
-
-	//Load the segment into the memory
-	try elf_file.setPosition(phdr.offset);
-	_ = try elf_file.read(segment_buffer);
-
-	// Zero fill padding
-	const rem: [*]u8 = @ptrCast(seg_buf.ptr);
-	for (phdr.filesz..phdr.memsz) |i| {
-		rem[i]=0;
-	}
-	
-	return @intFromPtr(seg_buf.ptr);
-}
-
 pub fn load_kernel_image(
 	root_filesystem: *const uefi.protocol.File,
 	kernel_path: [*:0]const u16,
 	kernel_entry_vaddr: *u64,
-	kernel_base_vaddr: *u64,
-) ![]elf.Elf64.Phdr {
+) !void {
 	// Populate runtime UEFI pointers
 	boot_services = uefi.system_table.boot_services.?;
 
@@ -76,31 +38,45 @@ pub fn load_kernel_image(
 
 	// Load ELF header and program headers into memory
 	const ehdr_buffer = try allocate_and_read(kernel, .boot_services_data, 0, 64);
-	defer boot_services.freePool(@alignCast(ehdr_buffer.ptr)) catch {};
 	const ehdr = std.mem.bytesAsValue(elf.Elf64.Ehdr, ehdr_buffer);
-	kernel_entry_vaddr.* = ehdr.entry;
 
 	const phdrs_buffer = try allocate_and_read(kernel, .boot_services_data, ehdr.phoff, ehdr.phentsize * ehdr.phnum);
 	const phdrs: [*]elf.Elf64.Phdr = @ptrCast(@alignCast(phdrs_buffer)); // Kinda unsafe
-	console.print("Loaded kernel ELF headers into memory");
-
-	// Load loadable ELF segments
-	// Reuse phdr slice to build paging tables
-	var first_segment = true;
 	const phdrs_slice = phdrs[0..ehdr.phnum];
-	for (phdrs_slice) |*phdr| {
-		if (phdr.type != .LOAD) { continue; }
 
-		const allocated_paddr = try load_elf_segment(kernel, phdr);
-		phdr.paddr = allocated_paddr;
+	kernel_entry_vaddr.* = ehdr.entry;
+	console.printf("Kernel entry: 0x{x}", .{ehdr.entry});
 
-		if (first_segment) {
-			first_segment = false;
-			kernel_base_vaddr.* = phdr.vaddr;
-		}
+	var kernel_virt_base: u64 = std.math.maxInt(u64);
+	var kernel_virt_end: u64 = 0;
+	for (phdrs_slice) |phdr| {
+		if (phdr.type != .LOAD) continue;
+		kernel_virt_base = @min(kernel_virt_base, phdr.vaddr);
+		kernel_virt_end = @max(kernel_virt_end, phdr.vaddr+phdr.memsz);
+	}
+	const kernel_load_size = ((kernel_virt_end - kernel_virt_base) + 4095) / 4096;
+
+	const kernel_buffer: []u8 = @ptrCast(@alignCast(try boot_services.allocatePages(.any, .loader_data, kernel_load_size)));
+	const kernel_phys_base = @intFromPtr(kernel_buffer.ptr);
+
+	for (phdrs_slice) |phdr| {
+		if (phdr.type != .LOAD) continue;
+
+		const segment_offset = phdr.vaddr - kernel_virt_base;
+		const segment_buffer = 	kernel_buffer[segment_offset..segment_offset+phdr.filesz];
+
+		try kernel.setPosition(phdr.offset);
+		_ = try kernel.read(segment_buffer);
+
+		const bss_buffer = kernel_buffer[segment_offset+phdr.filesz..segment_offset+phdr.memsz];
+		@memset(bss_buffer, 0);
 	}
 
-	console.print("Loaded kernel ELF segments to main memory");
-	return phdrs_slice;
+	console.print("Mapping kernel");
+	try paging.map_pages(
+		kernel_phys_base,
+		kernel_load_size,
+		kernel_virt_base - kernel_phys_base
+	);
 }
 

@@ -74,10 +74,11 @@ const irq_names: [16][] const u8 = .{
 
 export fn exception_handler(ctx: *StackFrame) callconv(.c) void {
 	switch (ctx.vector) {
-		0...31 => uart.printf("Exception #0x{x}: \"{s}\"\n\r", .{ctx.vector, exception_names[ctx.vector]}),
-		32...48 => uart.printf("IRQ #0x{x}: \"{s}\"\n\r", .{ctx.vector - 32, irq_names[ctx.vector - 32]}),
+		0...31 => uart.printf("\n\rException #0x{x}: \"{s}\"\n\r", .{ctx.vector, exception_names[ctx.vector]}),
+		32...48 => uart.printf("\n\rIRQ #0x{x}: \"{s}\"\n\r", .{ctx.vector - 32, irq_names[ctx.vector - 32]}),
 		else => uart.printf("Interrupt vector: #0x{x}\n\r", .{ctx.vector})
 	}
+	uart.print("===========================\n\r");
 
 	uart.print("Stack Frame:\n\r");
 	inline for (std.meta.fields(cpu.Registers)) |reg| {

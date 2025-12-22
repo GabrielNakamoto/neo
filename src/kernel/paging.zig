@@ -5,7 +5,6 @@
 const std = @import("std");
 const uefi = @import("std").os.uefi;
 const elf = @import("std").elf;
-const console = @import("./console.zig");
 
 pub const PagingLevel = [512]u64;
 const PAGE_ADDR_MASK: u64 =  0x000ffffffffff000; // 52 bit, page aligned address
@@ -14,41 +13,29 @@ const PRESENT_FLAG 	= 1 << 0;
 const RW_FLAG 			= 1 << 1;
 const USR_FLAG 			= 1 << 2;
 
-pub var pml4: *PagingLevel = undefined;
-var boot_services: *uefi.tables.BootServices = undefined;
-
-pub fn initialize(bservices: *uefi.tables.BootServices) !void {
-	boot_services = bservices;
-	pml4 = try allocate_level();
-}
-
-pub inline fn enable() void {
+pub fn enable(pml4: u64) void {
 	asm volatile (
-		\\ mov %[pml4_ptr], %%cr3
-		:: [pml4_ptr] "r" (@intFromPtr(pml4) & PAGE_ADDR_MASK)
+		\\ mov %[pml4], %%cr3
+		:: [pml4] "r" (pml4 & PAGE_ADDR_MASK)
 	);
 }
 
 // Allocates a page of memory (512 64-bit entries) using UEFI boot services
 // Zero-fills and returns the physical base address
-pub fn allocate_level() !*PagingLevel {
+pub fn allocate_level(boot_services: *uefi.tables.BootServices) !u64 {
 	const page_buffer = try boot_services.allocatePages(.any, .loader_data, 1);
-	const level_buffer: *PagingLevel = @ptrCast(page_buffer.ptr);
-	@memset(level_buffer, 0);
+	const level_buffer: *[512]u64 = @ptrCast(page_buffer.ptr);
 
-	return level_buffer;
-}
-
-pub fn map_pages(base: u64, npages: u64, delta: u64) !void {
-	for (0..npages) |p| {
-		const paddr = base + (p*4096);
-		try map_addr(paddr + delta, paddr);
+	for (0..512) |i| {
+		level_buffer[i]=0;
 	}
+
+	return @intFromPtr(level_buffer.ptr);
 }
 
 // Allocates memory for, and fills paging tables as necessary to have a page entry, mapping vaddr -> paddr
 // Basically ported from here: https://blog.llandsmeer.com/tech/2019/07/21/uefi-x64-userland.html
-pub fn map_addr(vaddr: u64, paddr: u64) !void {
+pub fn map_addr(vaddr: u64, paddr: u64, pml4: *PagingLevel, boot_services: *uefi.tables.BootServices) !void {
 	const flags = PRESENT_FLAG | RW_FLAG | USR_FLAG;
 
 	// (4) Page Map Level 4
@@ -61,27 +48,26 @@ pub fn map_addr(vaddr: u64, paddr: u64) !void {
 	const pt_idx 	= 	(vaddr >> 12) & 0x1ff;
 
 	if ((pml4[pml4_idx] & PRESENT_FLAG) == 0) {
-		const pdpt_addr = @intFromPtr(try allocate_level());
+		const pdpt_addr = try allocate_level(boot_services);
 		pml4[pml4_idx] = (pdpt_addr & PAGE_ADDR_MASK) | flags;
 	}
 
 	const pdpt: *PagingLevel = @ptrFromInt(pml4[pml4_idx] & PAGE_ADDR_MASK);
 
 	if ((pdpt[pdp_idx] & PRESENT_FLAG) == 0) {
-		const pdt_addr = @intFromPtr(try allocate_level());
+		const pdt_addr = try allocate_level(boot_services);
 		pdpt[pdp_idx] = (pdt_addr & PAGE_ADDR_MASK) | flags;
 	}
 
 	const pdt: *PagingLevel = @ptrFromInt(pdpt[pdp_idx] & PAGE_ADDR_MASK);
 
 	if ((pdt[pd_idx] & PRESENT_FLAG) == 0) {
-		const pt_addr = @intFromPtr(try allocate_level());
+		const pt_addr = try allocate_level(boot_services);
 		pdt[pd_idx] = (pt_addr & PAGE_ADDR_MASK) | flags;
 	}
 
 	const pt: *PagingLevel = @ptrFromInt(pdt[pd_idx] & PAGE_ADDR_MASK);
 
-	if ((pt[pt_idx] & PRESENT_FLAG) == 0) {
-		pt[pt_idx] = (paddr & PAGE_ADDR_MASK) | flags;
-	}
+	pt[pt_idx] = (paddr & PAGE_ADDR_MASK) | flags;
 }
+

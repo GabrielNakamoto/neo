@@ -18,12 +18,12 @@ var runtime_services: *uefi.tables.RuntimeServices = undefined;
 
 const final_msg = "\n\rConventional operating systems are everywhere...\n\rThey are the systems that have been pulled over your eyes to blind you from the truth";
 
-const KERNEL_STACK_SIZE = 6;
-const KERNEL_STACK_START = 0x80000;
+const KERNEL_STACK_PAGES = 6;
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
 	graphics_mode: *uefi.protocol.GraphicsOutput.Mode,
+	pml4: *paging.PagingLevel,
 };
 
 inline fn hlt() void {
@@ -53,6 +53,7 @@ fn load_mmap() !uefi.tables.MemoryMapSlice {
 fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 	console.print("Exiting UEFI boot services");
 	console.print(final_msg);
+		
 	const final_mmap = try load_mmap();
 	boot_services.exitBootServices(uefi.handle, final_mmap.info.key) catch |err| {
 		console.print("Error: exiting UEFI boot services");
@@ -74,6 +75,8 @@ fn bootloader() !void {
 	boot_services = uefi_table.boot_services.?;
 	runtime_services = uefi_table.runtime_services;
 
+	try paging.initialize(boot_services);
+
 	// Find kernel image
 	const kernel_path: [*:0]const u16 = std.unicode.utf8ToUtf16LeStringLiteral("\\kernel.elf");
 	const fsp = try boot_services.locateProtocol(uefi.protocol.SimpleFileSystem, null);
@@ -81,81 +84,56 @@ fn bootloader() !void {
 
 	// Load kernel segments
 	var kernel_entry_vaddr: u64 = undefined;
-	var kernel_base_vaddr: u64 = undefined;
-	const phdrs_slice = try loader.load_kernel_image(
+	try loader.load_kernel_image(
 		root_filesystem,
 		kernel_path,
 		&kernel_entry_vaddr,
-		&kernel_base_vaddr,
 	);
 
-	// Allocate kernel stack
-	_ = try boot_services.allocatePages(.{ .address = @ptrFromInt(KERNEL_STACK_START)}, .boot_services_data, KERNEL_STACK_SIZE);
+	const graphics_mode = get_graphics();
 
-	// Set up initial paging tables
-	const pml4_ptr = try paging.allocate_level(boot_services);
-	const pml4: *paging.PagingLevel = @ptrFromInt(pml4_ptr);
-
+	// Allocate boot info
+	const kernel_stack = try boot_services.allocatePages(.any, .loader_data, KERNEL_STACK_PAGES);
+	const boot_info: *BootInfo = @ptrCast(@alignCast((try boot_services.allocatePool(.loader_data, @sizeOf(BootInfo))).ptr));
+	try paging.map_pages(graphics_mode.frame_buffer_base, (graphics_mode.frame_buffer_size+4096)/4096, 0);
 
  	// Identity map relevant memory map sections
 	const mmap = try load_mmap();
 	var mmap_iter = mmap.iterator();
 	while (mmap_iter.next()) |descr| {
-		if (descr.type == .loader_data or descr.type == .loader_code or descr.type == .boot_services_data or descr.type == .boot_services_code) {
-			var offset: u64 = descr.physical_start;
-			for (0..descr.number_of_pages) |_| {
-				offset += 4096;
-				try paging.map_addr(offset, offset, pml4, boot_services);
-			}
+		if (descr.type == .loader_data or descr.type == .boot_services_code or descr.type == .loader_code or descr.type == .boot_services_data) {
+			try paging.map_pages(descr.physical_start, descr.number_of_pages, 0);
 		}
 	}
-
-	// Map kernel segments
-	for (phdrs_slice) |phdr| {
-		if (phdr.type != .LOAD) { continue; }
-		console.printf("Mapping segment address space 0x{x}->0x{x} to 0x{x}->0x{x}", .{phdr.vaddr, phdr.vaddr+phdr.memsz, phdr.paddr, phdr.paddr+phdr.memsz});
-		var offset: u64 = 0;
-		while (offset < phdr.memsz) : (offset += 4096) {
-			try paging.map_addr(phdr.vaddr+offset, phdr.paddr+offset, pml4, boot_services);
-		}
-	}
-	boot_services.freePool(@alignCast(@ptrCast(phdrs_slice.ptr))) catch {};
 
 	console.print("Disabling watchdog timer");
 	boot_services.setWatchdogTimer(0, 0, null) catch |err| {
-     		console.print("Error: Disabling watchdog timer failed");
-     		return err;
-    };
-
-	const graphics_mode = get_graphics();
-
-	for (0..(graphics_mode.frame_buffer_size+4096)/4096) |p| {
-		const addr = graphics_mode.frame_buffer_base + (p*4096);
-		try paging.map_addr(addr, addr, pml4, boot_services);
-	}
+     	console.print("Error: Disabling watchdog timer failed");
+     	return err;
+   };
 
 	// Keep in mind: no boot service calls can be made from this point, including printing
 	const final_mmap = try exit_boot_services();
 
-	// Update paging tables to allow virtual kernel addressing
-	paging.enable(pml4_ptr);
-
-	const boot_info: BootInfo = .{
+	boot_info.* = .{
 		.final_mmap = final_mmap,
-		.graphics_mode = graphics_mode
+		.graphics_mode = graphics_mode,
+		.pml4 = paging.pml4
 	};
+
+	paging.enable();
+
 	asm volatile (
-		\\mov %[kernel_stack_top], %%rsp
 		\\mov %[boot_info], %%rdi
+		\\mov %[kernel_stack_top], %%rsp
 		\\jmpq *%[entry]
 		:
-		: [kernel_stack_top] "n" (KERNEL_STACK_START + (4096 * KERNEL_STACK_SIZE)),
-			[boot_info] "r" (&boot_info),
+		: [kernel_stack_top] "r" (@intFromPtr(kernel_stack.ptr) + (KERNEL_STACK_PAGES * 4096)),
+			[boot_info] "r" (boot_info),
 		  [entry] "r" (kernel_entry_vaddr)
 		: .{ .memory = true }
 	);
-
-	return error.LoadError;
+	unreachable;
 }
 
 pub fn main() void {

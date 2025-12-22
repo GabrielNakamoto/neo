@@ -7,10 +7,12 @@ const elf = @import("std").elf;
 const std = @import("std");
 const keyboard = @import("./drivers/keyboard.zig");
 const video = @import("./drivers/video.zig");
+const paging = @import("./paging.zig");
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
 	graphics_mode: *uefi.protocol.GraphicsOutput.Mode,
+	pml4: *paging.PagingLevel,
 };
 
 pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
@@ -29,13 +31,10 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 	uart.print("\x1B[2J\x1B[H");
 	uart.print(msg);
 
-	uart.printf("Graphics mode: {}\n\r", .{boot_info.graphics_mode.mode});
-	uart.printf("Resolution: {}x{}\n\r", .{boot_info.graphics_mode.info.horizontal_resolution, boot_info.graphics_mode.info.vertical_resolution});
-
 	video.initialize(boot_info.graphics_mode);
-	video.frame_buffer[0] = 0xFFFFFFFF;
+	//video.frame_buffer[0] = 0xFFFFFFFF;
 
-	// keyboard.initialize();
+	//keyboard.initialize();
 
 	cpu.hang();
 }

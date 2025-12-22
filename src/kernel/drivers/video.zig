@@ -1,4 +1,5 @@
 const uefi = @import("std").os.uefi;
+const paging = @import("../paging.zig");
 
 const Pixel = u32;
 pub var frame_buffer: []volatile Pixel = undefined;
