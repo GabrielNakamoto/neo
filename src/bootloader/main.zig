@@ -23,6 +23,7 @@ const KERNEL_STACK_START = 0x80000;
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
+	graphics_mode: *uefi.protocol.GraphicsOutput.Mode,
 };
 
 inline fn hlt() void {
@@ -60,6 +61,11 @@ fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 	return final_mmap;
 }
 
+fn get_graphics() *uefi.protocol.GraphicsOutput.Mode {
+	const gop_protocol = boot_services.locateProtocol(uefi.protocol.GraphicsOutput, null) catch unreachable;
+	return gop_protocol.?.mode;
+}
+
 fn bootloader() !void {
 	const uefi_table = uefi.system_table;
 
@@ -89,6 +95,7 @@ fn bootloader() !void {
 	// Set up initial paging tables
 	const pml4_ptr = try paging.allocate_level(boot_services);
 	const pml4: *paging.PagingLevel = @ptrFromInt(pml4_ptr);
+
 
  	// Identity map relevant memory map sections
 	const mmap = try load_mmap();
@@ -120,17 +127,30 @@ fn bootloader() !void {
      		return err;
     };
 
+	const graphics_mode = get_graphics();
+
+	for (0..(graphics_mode.frame_buffer_size+4096)/4096) |p| {
+		const addr = graphics_mode.frame_buffer_base + (p*4096);
+		try paging.map_addr(addr, addr, pml4, boot_services);
+	}
+
 	// Keep in mind: no boot service calls can be made from this point, including printing
-	_ = try exit_boot_services();
+	const final_mmap = try exit_boot_services();
 
 	// Update paging tables to allow virtual kernel addressing
 	paging.enable(pml4_ptr);
 
+	const boot_info: BootInfo = .{
+		.final_mmap = final_mmap,
+		.graphics_mode = graphics_mode
+	};
 	asm volatile (
 		\\mov %[kernel_stack_top], %%rsp
+		\\mov %[boot_info], %%rdi
 		\\jmpq *%[entry]
 		:
 		: [kernel_stack_top] "n" (KERNEL_STACK_START + (4096 * KERNEL_STACK_SIZE)),
+			[boot_info] "r" (&boot_info),
 		  [entry] "r" (kernel_entry_vaddr)
 		: .{ .memory = true }
 	);

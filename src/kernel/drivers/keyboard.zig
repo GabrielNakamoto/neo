@@ -1,6 +1,6 @@
-const cpu = @import("./cpu.zig");
-const uart = @import("./uart.zig");
-const pic = @import("./pic.zig");
+const cpu = @import("../cpu.zig");
+const uart = @import("../uart.zig");
+const pic = @import("../pic.zig");
 
 const CMD_PORT: u8 = 0x64;
 const DATA_PORT: u8 = 0x60;

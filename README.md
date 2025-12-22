@@ -6,6 +6,7 @@
 
 ## References
 - Intel® 64 and IA-32 Architectures Software Developer’s Manual
+- https://uefi.org/specs/UEFI/2.11/index.html
 - https://wiki.osdev.org/Expanded_Main_Page
-- https://hv.smallkirby.com/en/intro
 - https://github.com/AndreaOrru/zen/
+- https://hv.smallkirby.com/en/intro
