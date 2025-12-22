@@ -16,12 +16,70 @@ const StackFrame = packed struct {
 	rflags: u64,
 };
 
-export fn exception_handler(ctx: *StackFrame) callconv(.c) void {
-	uart.printf("\n\rException #0x{x}!\n\r", .{ctx.vector});
-	uart.printf("Error Code: 0x{x}\n\r", .{ctx.error_code});
-	uart.print("Stack Frame:\n\r");
+// https://wiki.osdev.org/Exceptions
+const exception_names: [32][]const u8 = .{
+	"Division Error",
+	"Debug",
+	"Non-maskable Interrupt",
+	"Breakpoint",
+	"Overflow",
+	"Bound Range Exceeded",
+	"Invalid Opcode",
+	"Device Not Available",
+	"Double Fault",
+	"Reserved",
+	"Invalid TSS",
+	"Segment Not Present",
+	"Stack-Segment Fault",
+	"General Protection Fault",
+	"Page Fault",
+	"Reserved",
+	"x87 Floating-Point Exception",
+	"Alignment Check",
+	"Machine Check",
+	"SIMD Floating-Point Exception",
+	"Virtualization Exception",
+	"Control Protection Exception",
+	"Reserved",
+	"Reserved",
+	"Reserved",
+	"Reserved",
+	"Reserved",
+	"Reserved",
+	"Hypervisor Injection Exception",
+	"VMM Communication Exception",
+	"Security Exception",
+	"Reserved"
+};
 
-	// Print registers / stack frame
+const irq_names: [16][] const u8 = .{
+	"Programmable Interrupt Timer",
+	"Keyboard",
+	"Cascade",
+	"COM2",
+	"COM1",
+	"LPT2",
+	"Floppy Disk",
+	"LPT1",
+	"CMOS real-time clock",
+	"Free (peripherals / SCSI / NIC)",
+	"Free (peripherals / SCSI / NIC)",
+	"Free (peripherals / SCSI / NIC)",
+	"PS2 Mouse",
+	"FPU / Coprocessor / Inter-processor",
+	"Primary ATA Hard Disk",
+	"Secondary ATA Hard Disk"
+};
+
+
+export fn exception_handler(ctx: *StackFrame) callconv(.c) void {
+	switch (ctx.vector) {
+		0...31 => uart.printf("Exception #0x{x}: \"{s}\"\n\r", .{ctx.vector, exception_names[ctx.vector]}),
+		32...48 => uart.printf("IRQ #0x{x}: \"{s}\"\n\r", .{ctx.vector - 32, irq_names[ctx.vector - 32]}),
+		else => uart.printf("Interrupt vector: #0x{x}\n\r", .{ctx.vector})
+	}
+
+	uart.print("Stack Frame:\n\r");
 	inline for (std.meta.fields(cpu.Registers)) |reg| {
 		uart.printf("{s}:\t0x{x:0>16}\n\r", .{reg.name, @field(ctx.registers, reg.name)});
 	}
