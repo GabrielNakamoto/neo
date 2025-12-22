@@ -4,9 +4,9 @@ const cpu = @import("./cpu.zig");
 const uart = @import("./uart.zig");
 
 // ISR Stack State
-const Context = packed struct {
+const StackFrame = packed struct {
 	// Pushed in bootstrap isr
-	registers: Registers,
+	registers: cpu.Registers,
 	vector: u64,
 
 	// Pushed by CPU
@@ -16,57 +16,50 @@ const Context = packed struct {
 	rflags: u64,
 };
 
-pub export var context: *volatile Context = undefined;
+export fn exception_handler(ctx: *StackFrame) callconv(.c) void {
+	uart.printf("\n\rException #0x{x}!\n\r", .{ctx.vector});
+	uart.printf("Error Code: 0x{x}\n\r", .{ctx.error_code});
+	uart.print("Stack Frame:\n\r");
 
-// General purpose x86-64 registers
-const Registers = packed struct {
-	r8: u64,
-	r9: u64,
-	r10: u64,
-	r11: u64,
-	r12: u64,
-	r13: u64,
-	r14: u64,
-	r15: u64,
-	rax: u64,
-	rbx: u64,
-	rcx: u64,
-	rdx: u64,
-	rsi: u64,
-	rdi: u64,
-	rbp: u64,
-	rsp: u64,
-};
+	// Print registers / stack frame
+	inline for (std.meta.fields(cpu.Registers)) |reg| {
+		uart.printf("{s}:\t0x{x:0>16}\n\r", .{reg.name, @field(ctx.registers, reg.name)});
+	}
 
-export fn exception_handler() callconv(.c) void {
-	const vector: u8 = @truncate(context.vector);
-
-	uart.print("Exception! vector: ");
-	cpu.out(0x3f8, '0' + vector);
-	cpu.hlt();
+	cpu.hang();
 }
 
 const IsrFn = *const fn() callconv(.naked) void;
 
+export fn intCommon() callconv(.naked) void {
+	cpu.push_all();	
+
+	asm volatile (
+		\\mov %%rsp, %%rdi
+		\\call exception_handler
+	);
+
+	cpu.pop_all();
+
+	asm volatile(
+		\\add $16, %%rsp
+		// TODO: This causes stack fault
+		\\iretq
+	);
+}
+
 pub fn generateIsr(comptime vector: u64) IsrFn {
 	return struct {
-		fn handler() callconv(.naked) void {
+		fn handler() callconv(.naked) noreturn {
+			asm volatile("cli");
+			if (vector != 8 and vector != 17 and vector != 21 and !(vector >= 10 and vector <= 14)) {
+				asm volatile("pushq $0");
+			}
+
 			asm volatile(
 				\\pushq %[vector]
-				:: [vector] "i" (vector)
-			);
-			cpu.push_all();	
-
-			asm volatile (
-				\\mov %esp, context
-				\\call exception_handler
-			);
-
-			cpu.pop_all();
-
-			asm volatile(
-				\\add $0x10, %%rsp
-				\\iretq
+				\\jmp intCommon
+				:: [vector] "n" (vector)
 			);
 		}
 	}.handler;

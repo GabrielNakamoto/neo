@@ -18,6 +18,9 @@ var runtime_services: *uefi.tables.RuntimeServices = undefined;
 
 const final_msg = "\n\rConventional operating systems are everywhere...\n\rThey are the systems that have been pulled over your eyes to blind you from the truth";
 
+const KERNEL_STACK_SIZE = 6;
+const KERNEL_STACK_START = 0x80000;
+
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
 };
@@ -80,6 +83,9 @@ fn bootloader() !void {
 		&kernel_base_vaddr,
 	);
 
+	// Allocate kernel stack
+	_ = try boot_services.allocatePages(.{ .address = @ptrFromInt(KERNEL_STACK_START)}, .boot_services_data, KERNEL_STACK_SIZE);
+
 	// Set up initial paging tables
 	const pml4_ptr = try paging.allocate_level(boot_services);
 	const pml4: *paging.PagingLevel = @ptrFromInt(pml4_ptr);
@@ -115,19 +121,16 @@ fn bootloader() !void {
     };
 
 	// Keep in mind: no boot service calls can be made from this point, including printing
-	const final_mmap = try exit_boot_services();
-	const boot_info = .{
-		.final_mmap = final_mmap,
-	};
+	_ = try exit_boot_services();
 
 	// Update paging tables to allow virtual kernel addressing
 	paging.enable(pml4_ptr);
 
 	asm volatile (
-		\\ mov %[arg], %%rdi
-		\\ jmpq *%[entry]
+		\\mov %[kernel_stack_top], %%rsp
+		\\jmpq *%[entry]
 		:
-		: [arg] "r" (&boot_info),
+		: [kernel_stack_top] "n" (KERNEL_STACK_START + (4096 * KERNEL_STACK_SIZE)),
 		  [entry] "r" (kernel_entry_vaddr)
 		: .{ .memory = true }
 	);

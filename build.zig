@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
 	const kernel_mod = b.createModule(.{
 		.root_source_file = b.path("src/kernel/main.zig"),
 		.target = kernel_target,
-		// .optimize = .ReleaseSmall,
+		.optimize = .ReleaseSmall,
 		.code_model = .kernel,
 	});
 

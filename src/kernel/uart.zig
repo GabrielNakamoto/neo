@@ -29,3 +29,9 @@ pub fn print(str: []const u8) void {
 		serial_putc(c);
 	}
 }
+
+var buf: [1024]u8 = undefined;
+pub fn printf(comptime format: []const u8, args: anytype) void {
+    const formatted = std.fmt.bufPrint(&buf, format, args) catch unreachable;
+    print(formatted);
+}

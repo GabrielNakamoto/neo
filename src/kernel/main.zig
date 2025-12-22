@@ -10,6 +10,11 @@ const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
 };
 
+pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+	uart.print("Kernel panicked!");
+	cpu.hang();
+}
+
 export fn kmain() noreturn {
 	gdt.load();
 	interrupt.initialize();
@@ -19,8 +24,6 @@ export fn kmain() noreturn {
 	uart.init_serial();
 	uart.print("\x1B[2J\x1B[H");
 	uart.print(msg);
-
-	asm volatile("int $3");
 
 	cpu.hang();
 }

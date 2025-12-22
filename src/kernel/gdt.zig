@@ -25,6 +25,16 @@ const GDT = packed struct {
 	tss_high: SegmentDescriptor
 };
 
+const TSSDescriptor = packed struct {
+	limit_low: u16,
+	base_low: u24,
+	access: u8,
+	limit_high: u4,
+	flags: u4,
+	base_high: u40,
+	reserved: u32,
+};
+
 // Intel 64 and IA-32 Architectures Software Developers Manual
 // Volume 3 Section 8.7
 const TSS = packed struct {
@@ -58,17 +68,37 @@ fn build_segment_descriptor(base: u32, limit: u20, access: u8, flags: u4) Segmen
 	};
 }
 
-// GDT Entry binary spec: https://wiki.osdev.org/Global_Descriptor_Table#Segment_Descriptor
-// GDT Entry Access Flags
-const PRESENT 			= (1 << 7);
-const CODE_OR_DATA 	= (1 << 4);
-const CODE					= (1 << 3);
-const READ_WRITE 		= (1 << 1);
-const USER_LEVEL 		= (3 << 5);
-const KERNEL_ACCESS = (0 << 5);
+const Access = packed struct {
+	accessed: 	bool 	= false,
+	read_write: bool,
+	dc: 				bool 	= false,
+	exec: 			bool 	= false,
+	not_system: bool 	= true,
+	privilege: 	u2,
+	present: 		bool 	= true,
 
-const KERNEL = PRESENT | CODE_OR_DATA | READ_WRITE | KERNEL_ACCESS;
-const USER   = PRESENT | CODE_OR_DATA | READ_WRITE | USER_LEVEL;
+	pub fn data(self: Access) u8 {
+		var copy = self;
+		copy.exec = false;
+		return @bitCast(copy);
+	}
+
+	pub fn code(self: Access) u8 {
+		var copy = self;
+		copy.exec = true;
+		return @bitCast(copy);
+	}
+};
+
+const KernelAccess: Access = .{
+	.privilege = 0,
+	.read_write = true,
+};
+
+const UserAccess: Access = .{
+	.privilege = 3,
+	.read_write = true,
+};
 
 // GDT Entry Flags
 const LONG_CODE = (1 << 1);
@@ -77,10 +107,10 @@ const BLOCKS_4K = (1 << 3);
 // https://wiki.osdev.org/GDT_Tutorial#Flat_/_Long_Mode_Setup
 var global_descriptor_table: GDT = .{
 	.null_descriptor 	= build_segment_descriptor(0, 0, 0, 0),
-	.kernel_code 			= build_segment_descriptor(0, 0xffff, KERNEL | CODE, 	BLOCKS_4K | LONG_CODE),
-	.kernel_data 			= build_segment_descriptor(0, 0xffff, KERNEL, 				BLOCKS_4K),
-	.user_code 				= build_segment_descriptor(0, 0xffff, USER | CODE, 		BLOCKS_4K | LONG_CODE),
-	.user_data 				= build_segment_descriptor(0, 0xffff, USER, 					BLOCKS_4K),
+	.kernel_code 			= build_segment_descriptor(0, 0xfffff, KernelAccess.code(), 	BLOCKS_4K | LONG_CODE),
+	.kernel_data 			= build_segment_descriptor(0, 0xfffff, KernelAccess.data(), 	BLOCKS_4K),
+	.user_code 				= build_segment_descriptor(0, 0xfffff, UserAccess.code(), 		BLOCKS_4K | LONG_CODE),
+	.user_data 				= build_segment_descriptor(0, 0xfffff, UserAccess.data(), 		BLOCKS_4K),
 	.tss_low					= build_segment_descriptor(0, 0, 0, 0),
 	.tss_high					= build_segment_descriptor(0, 0, 0, 0),
 };
@@ -90,21 +120,17 @@ const task_state_segment: TSS = undefined;
 
 // https://wiki.osdev.org/Global_Descriptor_Table#Long_Mode_System_Segment_Descriptor
 pub fn describe_tss(base: u64, size: u20) void {
-	const base_low: u32 	= @truncate(base);
-	const base_high: u32 	= @truncate(base >> 32);
+	var tss_descr: *TSSDescriptor = @ptrCast(&global_descriptor_table.tss_low);
 
-	global_descriptor_table.tss_low  = build_segment_descriptor(base_low, size, 0x89, 0);
-	global_descriptor_table.tss_high = .{
-		.limit_low 	= @truncate(base_high),
-		.base_low  	= @intCast(base_high >> 16),
-		.access 		= 0,
-		.limit_high = 0,
-		.flags 			= 0,
-		.base_high 	= 0,
-	};
+	tss_descr.base_low 		= @truncate(base);
+	tss_descr.base_high 	= @truncate(base >> 32);
+	tss_descr.limit_low 	= @truncate(size);
+	tss_descr.limit_high 	= @truncate(size >> 16);
+	tss_descr.access 			= 0x89;
+	tss_descr.flags 			= 0x0;
 }
 
-// Reload segment registers
+// Reload segment registers with kernel data seg selector
 fn reloadSegments() void {
 	asm volatile (
 		\\mov $0x10, %%rax
@@ -117,6 +143,7 @@ fn reloadSegments() void {
 	);
 }
 
+// Relead code segment register with kernel code seg selector
 fn reloadCs() void {
 	asm volatile (
 		\\mov $0x8, %%rax

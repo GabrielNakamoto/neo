@@ -2,7 +2,7 @@
 
 - Simple pedagogical kernel 
 - Targets 64-bit x86
-- UEFI Bootloader
+- Custom UEFI Bootloader
 
 ## References
 - Intel® 64 and IA-32 Architectures Software Developer’s Manual
