@@ -24,6 +24,8 @@ pub fn load_kernel_image(
 	root_filesystem: *const uefi.protocol.File,
 	kernel_path: [*:0]const u16,
 	kernel_entry_vaddr: *u64,
+	kernel_paddr: *u64,
+	kernel_size: *u64,
 ) !void {
 	// Populate runtime UEFI pointers
 	boot_services = uefi.system_table.boot_services.?;
@@ -58,6 +60,8 @@ pub fn load_kernel_image(
 
 	const kernel_buffer: []u8 = @ptrCast(@alignCast(try boot_services.allocatePages(.any, .loader_data, kernel_load_size)));
 	const kernel_phys_base = @intFromPtr(kernel_buffer.ptr);
+	kernel_paddr.* = kernel_phys_base;
+	kernel_size.* = kernel_load_size;
 
 	for (phdrs_slice) |phdr| {
 		if (phdr.type != .LOAD) continue;

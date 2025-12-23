@@ -24,7 +24,11 @@ const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
 	graphics_mode: *uefi.protocol.GraphicsOutput.Mode,
 	pml4: *paging.PagingLevel,
+	kernel_paddr: u64,
+	kernel_size: u64,
+	stack_paddr: u64,
 };
+
 
 inline fn hlt() void {
 	asm volatile("hlt");
@@ -37,7 +41,7 @@ fn load_mmap() !uefi.tables.MemoryMapSlice {
 	};
 
 	const mmap_size: usize = mmap_info.len * mmap_info.descriptor_size;
-	const mmap_buffer = boot_services.allocatePool(.boot_services_data, mmap_size + 128) catch |err| {
+	const mmap_buffer = boot_services.allocatePool(.loader_data, mmap_size + 128) catch |err| {
 		console.print("Error: Allocating memory map buffer");
 		return err;
 	};
@@ -84,18 +88,22 @@ fn bootloader() !void {
 
 	// Load kernel segments
 	var kernel_entry_vaddr: u64 = undefined;
+	var kernel_paddr: u64 = undefined;
+	var kernel_size: u64 = undefined;
 	try loader.load_kernel_image(
 		root_filesystem,
 		kernel_path,
 		&kernel_entry_vaddr,
+		&kernel_paddr,
+		&kernel_size
 	);
 
 	const graphics_mode = get_graphics();
+	try paging.map_pages(graphics_mode.frame_buffer_base, (graphics_mode.frame_buffer_size+4095)/4096, 0);
 
 	// Allocate boot info
 	const kernel_stack = try boot_services.allocatePages(.any, .loader_data, KERNEL_STACK_PAGES);
 	const boot_info: *BootInfo = @ptrCast(@alignCast((try boot_services.allocatePool(.loader_data, @sizeOf(BootInfo))).ptr));
-	try paging.map_pages(graphics_mode.frame_buffer_base, (graphics_mode.frame_buffer_size+4096)/4096, 0);
 
  	// Identity map relevant memory map sections
 	const mmap = try load_mmap();
@@ -105,6 +113,7 @@ fn bootloader() !void {
 			try paging.map_pages(descr.physical_start, descr.number_of_pages, 0);
 		}
 	}
+	//boot_services.freePool(@alignCast(mmap.ptr)) catch {};
 
 	console.print("Disabling watchdog timer");
 	boot_services.setWatchdogTimer(0, 0, null) catch |err| {
@@ -118,7 +127,10 @@ fn bootloader() !void {
 	boot_info.* = .{
 		.final_mmap = final_mmap,
 		.graphics_mode = graphics_mode,
-		.pml4 = paging.pml4
+		.pml4 = paging.pml4,
+		.kernel_paddr = kernel_paddr,
+		.kernel_size = kernel_size,
+		.stack_paddr = @intFromPtr(kernel_stack.ptr)
 	};
 
 	paging.enable();

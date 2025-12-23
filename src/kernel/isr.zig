@@ -79,8 +79,7 @@ export fn exception_handler(ctx: *StackFrame) callconv(.c) void {
 		else => uart.printf("Interrupt vector: #0x{x}\n\r", .{ctx.vector})
 	}
 	uart.print("===========================\n\r");
-
-	uart.print("Stack Frame:\n\r");
+	uart.printf("RFLAGS:\t0x{}\n\r", .{ctx.rflags});
 	inline for (std.meta.fields(cpu.Registers)) |reg| {
 		uart.printf("{s}:\t0x{x:0>16}\n\r", .{reg.name, @field(ctx.registers, reg.name)});
 	}

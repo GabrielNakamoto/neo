@@ -13,6 +13,9 @@ const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
 	graphics_mode: *uefi.protocol.GraphicsOutput.Mode,
 	pml4: *paging.PagingLevel,
+	kernel_paddr: u64,
+	kernel_size: u64,
+	stack_paddr: u64,
 };
 
 pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
@@ -32,7 +35,8 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 	uart.print(msg);
 
 	video.initialize(boot_info.graphics_mode);
-	//video.frame_buffer[0] = 0xFFFFFFFF;
+	video.fill_screen(0x0);
+	video.print("Hello, graphics!");
 
 	//keyboard.initialize();
 
