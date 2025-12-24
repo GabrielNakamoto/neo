@@ -19,6 +19,71 @@ const ControllerStatus = packed struct {
 	parity_error: bool,
 };
 
+const KeyState = enum(u1) {
+	Up,
+	Down,
+};
+
+const ScanCode = packed struct {
+	suffix: u8,
+	root: u8 = 0x0,
+	prefix: u8 = 0x0,
+};
+
+const KeyTrigger = struct {
+	key_id: u8,
+	pressed: ScanCode,
+	released: ScanCode,
+};
+
+// Start with ineffient comptime array
+//
+// TODO: Optimize with custom comptime hashmap or
+//       runtime std hashmap with memory allocation?
+//
+// https://webdocs.cs.ualberta.ca/~amaral/courses/329/labs/scancodes.html
+const key_triggers: [128]KeyTrigger = blk: {
+	var foo_triggers: [128]KeyTrigger = undefined;
+	for (65..'Z'+1) |key| {
+		foo_triggers[key] = KeyTrigger{
+			.key_id = key,
+			.pressed = .{ .suffix = alphabet_suffix_codes[key-65] },
+			.released = .{ .root = 0xFA, .suffix = alphabet_suffix_codes[key-65] }
+		};
+	}
+	break :blk foo_triggers;
+};
+
+const alphabet_suffix_codes = [_]u8 {
+	0x1c, 0x32, 0x21, 0x23, 0x24, 0x2B, 0x34, 0x33, 0x43, 0x3B, 0x42, 0x4B, 0x3A, 0x31, 0x44, 0x4D, 0x15, 0x2D, 0x1B, 0x2C, 0x3C, 0x2A, 0x1D, 0x22, 0x35, 0x1A
+};
+
+// Start with just alphabet, numbers and space?
+var keymap: [128]KeyState = undefined;
+var current_scancode: ScanCode = undefined;
+
+fn irq(_: *isr.StackFrame) void {
+	const scancode = cpu.in(KBD_PORT);
+	switch (scancode) {
+		0xE0 => current_scancode.prefix = 0xE0,
+		0xF0 => current_scancode.root = 0xFA,
+		else => {
+			current_scancode.suffix = scancode;
+			for (&key_triggers) |trigger| {
+				if (current_scancode == trigger.pressed) {
+					uart.printf("{c} pressed\n\r", .{trigger.key_id});
+				} else if (current_scancode == trigger.released) {
+					uart.printf("{c} released\n\r", .{trigger.key_id});
+				} else {
+					continue;
+				}
+				break;
+			}
+			current_scancode = @bitCast(@as(u24, 0x0));
+		}
+	}
+}
+
 fn get_ps2_cfg() u8 {
 	write_ps2_command(0x20);
 	return read_keyboard();
@@ -54,12 +119,6 @@ fn write_ps2_command(byte: u8) void {
 	cpu.out(CMD_PORT, byte);
 }
 
-fn irq(_: *isr.StackFrame) void {
-	uart.print("Keyboard interrupt received!\n\r");
-	const recv = cpu.in(KBD_PORT);
-	uart.printf("Keyboard sent: 0x{x}\n\r", .{recv});
-}
-
 pub fn initialize() void {
 	// Disable port 1 interrupts
 	var config = get_ps2_cfg();
@@ -70,13 +129,14 @@ pub fn initialize() void {
 	write_ps2_command(0xAE);
 
 	// Enable keyboard scanning
-	write_keyboard(0xF0, true); // Scan set 2
-	write_keyboard(2, false); // Scan set 2
 	write_keyboard(0xF4, true);
+	write_keyboard(0xF0, true); // Scan set 2
+	write_keyboard(2, true); // Scan set 2
 
 	// Enable port 1 interrupts
 	var config2 = get_ps2_cfg();
 	config2 |= 1;
+	config2 &= ~@as(u8, 1 << 6); // Disable translation, force scan set 2
 	set_ps2_cfg(config2);
 
 	isr.register_irq(1, &irq);

@@ -25,16 +25,13 @@ pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
 }
 
 export fn kmain(boot_info: *BootInfo) noreturn {
+	uart.init_serial();
+	uart.print("\x1B[2J\x1B[H");
+
 	gdt.load();
 	interrupt.initialize();
 	keyboard.initialize();
 	asm volatile("sti");
-
-	const msg = "Follow the white rabbit.\n\r";
-
-	uart.init_serial();
-	uart.print("\x1B[2J\x1B[H");
-	uart.print(msg);
 
 	var video = Video.initialize(boot_info.graphics_mode);
 	video.fill_screen(0x0);
