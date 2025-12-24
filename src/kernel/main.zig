@@ -7,17 +7,16 @@ const elf = @import("std").elf;
 const std = @import("std");
 const keyboard = @import("./drivers/keyboard.zig");
 const Video = @import("./drivers/video.zig");
-const paging = @import("./paging.zig");
 const memory = @import("./memory.zig");
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
 	graphics_mode: *uefi.protocol.GraphicsOutput.Mode,
 	runtime_services: *uefi.tables.RuntimeServices,
-	pml4: *paging.PagingLevel,
 	kernel_paddr: u64,
 	kernel_size: u64,
 	stack_paddr: u64,
+	empty_paging_tables: [][512]u64
 };
 
 pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
@@ -31,6 +30,7 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 	uart.print("Initialized serial i/o.\n\r");
 	uart.printf("Kernel paddr: 0x{x}\n\r", .{boot_info.kernel_paddr});
 	uart.printf("Kernel stack addr: 0x{x}\n\r", .{boot_info.stack_paddr});
+	uart.printf("Pre-allocated paging tables: {}\n\r", .{boot_info.empty_paging_tables.len});
 
 	gdt.load();
 	uart.print("Loaded GDT and TSS.\n\r");
@@ -45,16 +45,10 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 	const time, _  = boot_info.runtime_services.getTime() catch unreachable;
 	video.printf("{d:0>2}:{d:0>2}:{d:0>2}> ", .{time.hour, time.minute, time.second});
 
-	// uart.printf("{}\n\r", .{@intFromPtr(boot_info.final_mmap.ptr)});
-	// uart.printf("{}\n\r", .{boot_info.final_mmap.info.len});
-
 	memory.find_memory(boot_info.final_mmap);
 
-	// TODO: key callback functions
-	// Pass function to be called when a certain key is clicked
-
+	// Shell testing
 	keyboard.subscribers[0] = &video_subscriber;
-
 	while (true) {
 		render(&video);
 		cpu.hlt();

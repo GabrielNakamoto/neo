@@ -19,15 +19,16 @@ var runtime_services: *uefi.tables.RuntimeServices = undefined;
 const final_msg = "\n\rConventional operating systems are everywhere...\n\rThey are the systems that have been pulled over your eyes to blind you from the truth";
 
 const KERNEL_STACK_PAGES = 6;
+const EMPTY_PAGE_TABLES = 256;
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
 	graphics_mode: *uefi.protocol.GraphicsOutput.Mode,
 	runtime_services: *uefi.tables.RuntimeServices,
-	pml4: *paging.PagingLevel,
 	kernel_paddr: u64,
 	kernel_size: u64,
 	stack_paddr: u64,
+	empty_paging_tables: [][512]u64
 };
 
 
@@ -99,6 +100,12 @@ fn bootloader() !void {
 		&kernel_size
 	);
 
+	const empty_paging_tables_buffer = try boot_services.allocatePages(.any, .loader_data, EMPTY_PAGE_TABLES);
+
+	var empty_paging_tables: [][512]u64 = &.{};
+	empty_paging_tables.ptr = @ptrCast(empty_paging_tables_buffer.ptr);
+	empty_paging_tables.len = empty_paging_tables_buffer.len;
+
 	const graphics_mode = get_graphics();
 	try paging.map_pages(graphics_mode.frame_buffer_base, (graphics_mode.frame_buffer_size+4095)/4096, 0);
 
@@ -136,10 +143,10 @@ fn bootloader() !void {
 		.final_mmap = final_mmap,
 		.graphics_mode = graphics_mode,
 		.runtime_services = runtime_services,
-		.pml4 = paging.pml4,
 		.kernel_paddr = kernel_paddr,
 		.kernel_size = kernel_size,
-		.stack_paddr = @intFromPtr(kernel_stack.ptr)
+		.stack_paddr = @intFromPtr(kernel_stack.ptr),
+		.empty_paging_tables = empty_paging_tables
 	};
 
 	paging.enable();

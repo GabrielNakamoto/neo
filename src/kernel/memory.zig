@@ -4,6 +4,7 @@ const uart = @import("./uart.zig");
 const MemoryBlock = struct {
 	phys_start: u64,
 	n_pages: u64,
+	bytes_used: u64 = 0
 };
 
 const free_memory_types = [_]uefi.tables.MemoryType {
@@ -15,6 +16,10 @@ var allocator_block: MemoryBlock = .{
 	.phys_start = 0,
 	.n_pages = 0,
 };
+
+
+// TODO: pre-allocate empty page tables in boot loader
+// to be able to map allocator block in kernel
 
 // Concatenate blocks of free memory to use
 pub fn find_memory(mmap: uefi.tables.MemoryMapSlice) void {
