@@ -8,7 +8,6 @@ const paging = @import("../paging.zig");
 const RAW_BITMAP = @embedFile("../font.bin");
 const Pixel = u32;
 
-
 const Self = @This();
 
 foreground: Pixel = 0xFFFFFFFF,
@@ -16,6 +15,7 @@ background: Pixel = 0x0,
 scanline_width: u32,
 font_bitmap: *const[128][16]u8 = @ptrCast(RAW_BITMAP),
 frame_buffer: []volatile Pixel,
+// swap_buffer: []volatile Pixel,
 cursor: u64 = 0,
 
 pub fn initialize(graphics_mode: *uefi.protocol.GraphicsOutput.Mode) Self {

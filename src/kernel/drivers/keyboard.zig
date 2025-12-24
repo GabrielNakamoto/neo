@@ -9,6 +9,17 @@ const KBD_PORT: u8 	= 0x60;
 const ACK: u8 			= 0xFA;
 const RESEND: u8 		= 0xFE;
 
+const ControllerConfig = packed struct {
+	port1_interrupts_enabled: bool,
+	port2_interrupts_enabled: bool,
+	system_flag: bool,
+	zero1: bool = false,
+	port1_clock: bool,
+	port2_clock: bool,
+	port1_translate: bool,
+	zero2: bool = false
+};
+
 const ControllerStatus = packed struct {
 	read_buffer_full: bool,
 	write_buffer_full: bool,
@@ -45,7 +56,6 @@ const numeric_suffix_codes = [_]u8 {
 
 // Subscribers will be notified when new exception comes in so they
 // Dont get stale key states
-
 const Subscriber = *const fn() void;
 fn _default_subscriber() void {}
 // TODO: make this variable length array? Need runtime memory
@@ -144,14 +154,14 @@ fn irq(_: *isr.StackFrame) void {
 	}
 }
 
-fn get_ps2_cfg() u8 {
+fn get_ps2_cfg() ControllerConfig {
 	write_ps2_command(0x20);
-	return read_keyboard();
+	return @bitCast(read_keyboard());
 }
 
-fn set_ps2_cfg(cfg: u8) void {
+fn set_ps2_cfg(cfg: ControllerConfig) void {
 	write_ps2_command(0x60);
-	write_keyboard(cfg, false);
+	write_keyboard(@bitCast(cfg), false);
 }
 
 fn status() ControllerStatus {
@@ -180,9 +190,8 @@ fn write_ps2_command(byte: u8) void {
 }
 
 pub fn initialize() void {
-	// Disable port 1 interrupts
 	var config = get_ps2_cfg();
-	config &= ~@as(u8, 1);
+	config.port1_interrupts_enabled = false;
 	set_ps2_cfg(config);
 
 	// Enable port 1
@@ -193,10 +202,9 @@ pub fn initialize() void {
 	write_keyboard(0xF0, true); // Scan set 2
 	write_keyboard(2, true); // Scan set 2
 
-	// Enable port 1 interrupts
 	var config2 = get_ps2_cfg();
-	config2 |= 1;
-	config2 &= ~@as(u8, 1 << 6); // Disable translation, force scan set 2
+	config2.port1_interrupts_enabled = true;
+	config2.port1_translate = false;
 	set_ps2_cfg(config2);
 
 	isr.register_irq(1, &irq);

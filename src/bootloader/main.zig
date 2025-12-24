@@ -102,6 +102,9 @@ fn bootloader() !void {
 	const graphics_mode = get_graphics();
 	try paging.map_pages(graphics_mode.frame_buffer_base, (graphics_mode.frame_buffer_size+4095)/4096, 0);
 
+	const final_mmap_buffer: [*]u8 = @ptrCast(try boot_services.allocatePages(.any, .loader_data, 2));
+	try paging.map_pages(@intFromPtr(final_mmap_buffer), 2, 0);
+
 	// Allocate boot info
 	const kernel_stack = try boot_services.allocatePages(.any, .loader_data, KERNEL_STACK_PAGES);
 	const boot_info: *BootInfo = @ptrCast(@alignCast((try boot_services.allocatePool(.loader_data, @sizeOf(BootInfo))).ptr));
@@ -123,7 +126,11 @@ fn bootloader() !void {
    };
 
 	// Keep in mind: no boot service calls can be made from this point, including printing
-	const final_mmap = try exit_boot_services();
+	var final_mmap = try exit_boot_services();
+
+	const copy_len = final_mmap.info.len * final_mmap.info.descriptor_size;
+	@memcpy(final_mmap_buffer, final_mmap.ptr[0..copy_len]);
+	final_mmap.ptr = @alignCast(final_mmap_buffer);
 
 	boot_info.* = .{
 		.final_mmap = final_mmap,

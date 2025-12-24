@@ -8,6 +8,7 @@ const std = @import("std");
 const keyboard = @import("./drivers/keyboard.zig");
 const Video = @import("./drivers/video.zig");
 const paging = @import("./paging.zig");
+const memory = @import("./memory.zig");
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
@@ -27,9 +28,14 @@ pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
 export fn kmain(boot_info: *BootInfo) noreturn {
 	uart.init_serial();
 	uart.print("\x1B[2J\x1B[H");
+	uart.print("Initialized serial i/o.\n\r");
+	uart.printf("Kernel paddr: 0x{x}\n\r", .{boot_info.kernel_paddr});
+	uart.printf("Kernel stack addr: 0x{x}\n\r", .{boot_info.stack_paddr});
 
 	gdt.load();
+	uart.print("Loaded GDT and TSS.\n\r");
 	interrupt.initialize();
+	uart.print("Initialized interrupts.\n\r");
 	keyboard.initialize();
 	asm volatile("sti");
 
@@ -38,6 +44,11 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 
 	const time, _  = boot_info.runtime_services.getTime() catch unreachable;
 	video.printf("{d:0>2}:{d:0>2}:{d:0>2}> ", .{time.hour, time.minute, time.second});
+
+	// uart.printf("{}\n\r", .{@intFromPtr(boot_info.final_mmap.ptr)});
+	// uart.printf("{}\n\r", .{boot_info.final_mmap.info.len});
+
+	memory.find_memory(boot_info.final_mmap);
 
 	// TODO: key callback functions
 	// Pass function to be called when a certain key is clicked
@@ -67,10 +78,10 @@ fn video_subscriber() void {
 			i += 1;
 		}
 	}
-	str[i] = '_';
 }
 
 fn render(video: *Video) void {
+	str[i] = '_';
 	video.fill_screen(0x0);
 	video.printf("{s}", .{str[0..i+1]});
 }
