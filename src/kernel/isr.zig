@@ -89,7 +89,8 @@ pub fn register_exception(vector: u64, handler: InterruptHandler) void {
 fn default_exception(ctx: *StackFrame) void {
 	uart.printf("\n\rException #0x{x}: \"{s}\"\n\r", .{ctx.vector, exception_names[ctx.vector]});
 	uart.print("===========================\n\r");
-	uart.printf("RFLAGS:\t0x{}\n\r", .{ctx.rflags});
+	uart.printf("RFLAGS:\t0x{x}\n\r", .{ctx.rflags});
+	uart.printf("RIP:\t0x{x}\n\r", .{ctx.rip});
 
 	inline for (std.meta.fields(cpu.Registers)) |reg| {
 		uart.printf("{s}:\t0x{x:0>16}\n\r", .{reg.name, @field(ctx.registers, reg.name)});

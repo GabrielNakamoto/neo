@@ -19,16 +19,16 @@ frame_buffer: []volatile Pixel,
 cursor: u64 = 0,
 
 pub fn initialize(graphics_mode: *uefi.protocol.GraphicsOutput.Mode) Self {
-	var frame_buffer: []volatile Pixel = undefined;
-	frame_buffer.ptr = @ptrFromInt(graphics_mode.frame_buffer_base);
-	frame_buffer.len = graphics_mode.frame_buffer_size / @sizeOf(Pixel);
+	const frame_buffer_array: [*]volatile Pixel = @ptrFromInt(graphics_mode.frame_buffer_base);
+	const frame_buffer_len = graphics_mode.frame_buffer_size / @sizeOf(Pixel);
 
 	return .{
-		.frame_buffer = frame_buffer,
+		.frame_buffer = frame_buffer_array[0..frame_buffer_len],
 		.scanline_width = graphics_mode.info.pixels_per_scan_line
 	};
 }
 
+// Write current text at same time / do buffer swap
 pub fn fill_screen(self: Self, pixel: Pixel) void {
 	@memset(self.frame_buffer, pixel);
 }

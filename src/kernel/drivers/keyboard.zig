@@ -48,6 +48,7 @@ const numeric_suffix_codes = [_]u8 {
 
 const Subscriber = *const fn() void;
 fn _default_subscriber() void {}
+// TODO: make this variable length array? Need runtime memory
 pub var subscribers: [32]Subscriber = [_]Subscriber{&_default_subscriber} ** 32;
 
 pub fn is_clicked(key: u8) bool {
@@ -100,20 +101,25 @@ var current_scancode: ScanCode = undefined;
 var first_interrupt: bool = true;
 fn irq(_: *isr.StackFrame) void {
 	const scancode = cpu.in(KBD_PORT);
+	// Flush first interrupt
 	if (first_interrupt) {
 		first_interrupt = scancode == 0xE0 or scancode == 0xF0;
 		return;
 	}
+	// Update click states
 	for (&keymap) |*state| {
 		if (state.* == .Click) {
 			state.* = .Down;
 		}
 	}
+
+	// Either fill prefixes or handle full scancode
 	switch (scancode) {
 		0xE0 => current_scancode.prefix = 0xE0,
 		0xF0 => current_scancode.root = 0xFA,
 		else => {
 			current_scancode.suffix = scancode;
+			// Activate triggers
 			for (&key_triggers, 0..) |trigger, i| {
 				const key: u8 = @truncate(i);
 				if (current_scancode == trigger.pressed) {
@@ -127,10 +133,12 @@ fn irq(_: *isr.StackFrame) void {
 				}
 				break;
 			}
+			// New scancode
 			current_scancode = @bitCast(@as(u24, 0x0));
 		}
 	}
 
+	// Notify subscribers
 	for (&subscribers) |notify| {
 		notify();
 	}
