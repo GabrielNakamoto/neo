@@ -23,6 +23,7 @@ const KERNEL_STACK_PAGES = 6;
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
 	graphics_mode: *uefi.protocol.GraphicsOutput.Mode,
+	runtime_services: *uefi.tables.RuntimeServices,
 	pml4: *paging.PagingLevel,
 	kernel_paddr: u64,
 	kernel_size: u64,
@@ -109,7 +110,7 @@ fn bootloader() !void {
 	const mmap = try load_mmap();
 	var mmap_iter = mmap.iterator();
 	while (mmap_iter.next()) |descr| {
-		if (descr.type == .loader_data or descr.type == .boot_services_code or descr.type == .loader_code or descr.type == .boot_services_data) {
+		if (descr.type == .loader_data or descr.type == .boot_services_code or descr.type == .loader_code or descr.type == .boot_services_data or descr.type == .runtime_services_data or descr.type == .runtime_services_code) {
 			try paging.map_pages(descr.physical_start, descr.number_of_pages, 0);
 		}
 	}
@@ -127,6 +128,7 @@ fn bootloader() !void {
 	boot_info.* = .{
 		.final_mmap = final_mmap,
 		.graphics_mode = graphics_mode,
+		.runtime_services = runtime_services,
 		.pml4 = paging.pml4,
 		.kernel_paddr = kernel_paddr,
 		.kernel_size = kernel_size,

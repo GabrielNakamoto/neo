@@ -9,6 +9,7 @@ const PIC2_DATA 		= 0xA1;
 const ICW1_INIT 			= 0x10;
 const ICW1_ICW4 			= 0x01;
 const ICW4_8086_MODE 	= 0x01;
+const PIC_EOI 				= 0x20;
 
 // https://wiki.osdev.org/8259_PIC#Programming_the_PIC_chips
 pub fn initialize() void {
@@ -31,6 +32,13 @@ pub fn initialize() void {
 	// Mask/disable all irqs initially
 	cpu.out(PIC1_DATA, 0xFF);
 	cpu.out(PIC2_DATA, 0xFF);
+}
+
+pub inline fn end_irq(irq_line: u8) void {
+	if (irq_line >= 8) {
+		cpu.out(PIC2_COMMAND, PIC_EOI);
+	}
+	cpu.out(PIC1_COMMAND, PIC_EOI);
 }
 
 pub fn enable_irq(irq_line: u8) void {

@@ -2,19 +2,7 @@ const std = @import("std");
 const idt = @import("./idt.zig");
 const cpu = @import("./cpu.zig");
 const uart = @import("./uart.zig");
-
-// ISR Stack State
-const StackFrame = packed struct {
-	// Pushed in bootstrap isr
-	registers: cpu.Registers,
-	vector: u64,
-
-	// Pushed by CPU
-	error_code: u64,
-	rip: u64,
-	cs: u64,
-	rflags: u64,
-};
+const pic = @import("./pic.zig");
 
 // https://wiki.osdev.org/Exceptions
 const exception_names: [32][]const u8 = .{
@@ -71,30 +59,66 @@ const irq_names: [16][] const u8 = .{
 	"Secondary ATA Hard Disk"
 };
 
+// ISR Stack State
+pub const StackFrame = packed struct {
+	// Pushed in bootstrap isr
+	registers: cpu.Registers,
+	vector: u64,
 
-export fn exception_handler(ctx: *StackFrame) callconv(.c) void {
-	switch (ctx.vector) {
-		0...31 => uart.printf("\n\rException #0x{x}: \"{s}\"\n\r", .{ctx.vector, exception_names[ctx.vector]}),
-		32...48 => uart.printf("\n\rIRQ #0x{x}: \"{s}\"\n\r", .{ctx.vector - 32, irq_names[ctx.vector - 32]}),
-		else => uart.printf("Interrupt vector: #0x{x}\n\r", .{ctx.vector})
-	}
+	// Pushed by CPU
+	error_code: u64,
+	rip: u64,
+	cs: u64,
+	rflags: u64,
+};
+
+const IsrFn = *const fn() callconv(.naked) void;
+const InterruptHandler = *const fn(*StackFrame) void;
+
+var exception_handlers: [32]InterruptHandler = [_]InterruptHandler{default_exception} ** 32;
+var irq_handlers: [16]InterruptHandler = [_]InterruptHandler{default_irq} ** 16;
+
+pub fn register_irq(vector: u64, handler: InterruptHandler) void {
+	irq_handlers[vector]=handler;
+}
+
+pub fn register_exception(vector: u64, handler: InterruptHandler) void {
+	exception_handlers[vector]=handler;
+}
+
+fn default_exception(ctx: *StackFrame) void {
+	uart.printf("\n\rException #0x{x}: \"{s}\"\n\r", .{ctx.vector, exception_names[ctx.vector]});
 	uart.print("===========================\n\r");
 	uart.printf("RFLAGS:\t0x{}\n\r", .{ctx.rflags});
+
 	inline for (std.meta.fields(cpu.Registers)) |reg| {
 		uart.printf("{s}:\t0x{x:0>16}\n\r", .{reg.name, @field(ctx.registers, reg.name)});
 	}
-
 	cpu.hang();
 }
 
-const IsrFn = *const fn() callconv(.naked) void;
+fn default_irq(ctx: *StackFrame) void {
+	uart.printf("\n\rIRQ #0x{x}: \"{s}\"\n\r", .{ctx.vector - 32, irq_names[ctx.vector - 32]});
+	cpu.hang();
+}
+
+export fn interrupt_dispatch(ctx: *StackFrame) callconv(.c) void {
+	switch (ctx.vector) {
+		0...31 => exception_handlers[ctx.vector](ctx),
+		else => {
+			const irq_line = ctx.vector - 32;
+			irq_handlers[irq_line](ctx);
+			pic.end_irq(@truncate(irq_line));
+		}
+	}
+}
 
 export fn intCommon() callconv(.naked) void {
 	cpu.push_all();	
 
 	asm volatile (
 		\\mov %%rsp, %%rdi
-		\\call exception_handler
+		\\call interrupt_dispatch
 	);
 
 	cpu.pop_all();

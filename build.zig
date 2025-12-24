@@ -66,6 +66,13 @@ pub fn build(b: *std.Build) void {
 	qemu_cmd.addArg("-serial");
 	qemu_cmd.addArg("mon:stdio");
 
+	qemu_cmd.addArg("-machine");
+	qemu_cmd.addArg("q35");
+
+	//.qemu_cmd.addArg("--enable-kvm");
+	qemu_cmd.addArg("-rtc");
+	qemu_cmd.addArg("base=localtime,clock=host");
+
 	const gdb_debug = b.option(bool, "gdb", "Configure QEMU for debugging with gdb") orelse false;
 	if (gdb_debug) {
 		qemu_cmd.addArg("-s");
@@ -78,11 +85,13 @@ pub fn build(b: *std.Build) void {
 		ocp.basename(b, &boot_dir.step),
 	);
 
-	qemu_cmd.addArg("-drive");
-	qemu_cmd.addPrefixedFileArg(
-		"format=raw,if=pflash,file=",
-		oc,
-	);
+	//qemu_cmd.addArg("-drive");
+	//qemu_cmd.addPrefixedFileArg(
+		//"format=raw,if=pflash,file=",
+		//oc,
+	//);
+	qemu_cmd.addArg("-bios");
+	qemu_cmd.addFileArg(oc);
 
 	qemu_cmd.addArg("-drive");
     qemu_cmd.addPrefixedDirectoryArg(
