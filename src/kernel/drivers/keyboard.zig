@@ -19,9 +19,10 @@ const ControllerStatus = packed struct {
 	parity_error: bool,
 };
 
-const KeyState = enum(u1) {
+const KeyState = enum(u2) {
 	Up,
 	Down,
+	Click,
 };
 
 const ScanCode = packed struct {
@@ -31,10 +32,22 @@ const ScanCode = packed struct {
 };
 
 const KeyTrigger = struct {
-	key_id: u8,
 	pressed: ScanCode,
 	released: ScanCode,
 };
+
+const alphabet_suffix_codes = [_]u8 {
+	0x1c, 0x32, 0x21, 0x23, 0x24, 0x2B, 0x34, 0x33, 0x43, 0x3B, 0x42, 0x4B, 0x3A, 0x31, 0x44, 0x4D, 0x15, 0x2D, 0x1B, 0x2C, 0x3C, 0x2A, 0x1D, 0x22, 0x35, 0x1A
+};
+const numeric_suffix_codes = [_]u8 {
+	0x45, 0x16, 0x1E, 0x26, 0x25, 0x2E, 0x36, 0x3D, 0x3E, 0x46
+};
+
+var keymap: [256]KeyState = [_]KeyState {.Up} ** 256;
+
+pub fn is_key_clicked(c: u8) bool {
+	return keymap[c] == .Click;
+}
 
 // Start with ineffient comptime array
 //
@@ -44,22 +57,37 @@ const KeyTrigger = struct {
 // https://webdocs.cs.ualberta.ca/~amaral/courses/329/labs/scancodes.html
 const key_triggers: [128]KeyTrigger = blk: {
 	var foo_triggers: [128]KeyTrigger = undefined;
-	for (65..'Z'+1) |key| {
-		foo_triggers[key] = KeyTrigger{
-			.key_id = key,
-			.pressed = .{ .suffix = alphabet_suffix_codes[key-65] },
-			.released = .{ .root = 0xFA, .suffix = alphabet_suffix_codes[key-65] }
+
+	// Alphanumeric 
+	for ('A'..'Z'+1) |key| {
+		foo_triggers[key] = .{
+			.pressed = .{ .suffix = alphabet_suffix_codes[key-'A'] },
+			.released = .{ .root = 0xFA, .suffix = alphabet_suffix_codes[key-'A'] }
 		};
 	}
+	for ('0'..'9'+1) |key| {
+		foo_triggers[key] = .{
+			.pressed = .{ .suffix = numeric_suffix_codes[key-'0'] },
+			.released = .{ .root = 0xFA, .suffix = numeric_suffix_codes[key-'0'] }
+		};
+	}
+
+	// Space, Backspace and Enter
+	foo_triggers[' '] = .{
+		.pressed = .{ .suffix = 0x29 },
+		.released = .{ .root=0xFA, .suffix = 0x29 }
+	};
+	foo_triggers[0x8] = .{
+		.pressed = .{ .suffix = 0x66 },
+		.released = .{ .root=0xFA, .suffix = 0x66 }
+	};
+	foo_triggers['\n'] = .{
+		.pressed = .{ .suffix = 0x5A },
+		.released = .{ .root=0xFA, .suffix = 0x5A }
+	};
 	break :blk foo_triggers;
 };
 
-const alphabet_suffix_codes = [_]u8 {
-	0x1c, 0x32, 0x21, 0x23, 0x24, 0x2B, 0x34, 0x33, 0x43, 0x3B, 0x42, 0x4B, 0x3A, 0x31, 0x44, 0x4D, 0x15, 0x2D, 0x1B, 0x2C, 0x3C, 0x2A, 0x1D, 0x22, 0x35, 0x1A
-};
-
-// Start with just alphabet, numbers and space?
-var keymap: [128]KeyState = undefined;
 var current_scancode: ScanCode = undefined;
 
 fn irq(_: *isr.StackFrame) void {
@@ -69,11 +97,18 @@ fn irq(_: *isr.StackFrame) void {
 		0xF0 => current_scancode.root = 0xFA,
 		else => {
 			current_scancode.suffix = scancode;
-			for (&key_triggers) |trigger| {
+			for (&key_triggers, 0..) |trigger, i| {
+				const key: u8 = @truncate(i);
 				if (current_scancode == trigger.pressed) {
-					uart.printf("{c} pressed\n\r", .{trigger.key_id});
+					uart.printf("{c} pressed\n\r", .{key});
+					if (keymap[key] == .Up) {
+						keymap[key]=.Click;
+					} else {
+						keymap[key]=.Down;
+					}
 				} else if (current_scancode == trigger.released) {
-					uart.printf("{c} released\n\r", .{trigger.key_id});
+					uart.printf("{c} released\n\r", .{key});
+					keymap[key]=.Up;
 				} else {
 					continue;
 				}
