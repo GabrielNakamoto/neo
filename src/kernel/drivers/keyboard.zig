@@ -43,12 +43,18 @@ const numeric_suffix_codes = [_]u8 {
 	0x45, 0x16, 0x1E, 0x26, 0x25, 0x2E, 0x36, 0x3D, 0x3E, 0x46
 };
 
-var keymap: [256]KeyState = [_]KeyState {.Up} ** 256;
+// Subscribers will be notified when new exception comes in so they
+// Dont get stale key states
 
-pub fn is_key_clicked(c: u8) bool {
-	return keymap[c] == .Click;
+const Subscriber = *const fn() void;
+fn _default_subscriber() void {}
+pub var subscribers: [32]Subscriber = [_]Subscriber{&_default_subscriber} ** 32;
+
+pub fn is_clicked(key: u8) bool {
+	return keymap[key] == .Click;
 }
 
+var keymap: [256]KeyState = [_]KeyState {.Up} ** 256;
 // Start with ineffient comptime array
 //
 // TODO: Optimize with custom comptime hashmap or
@@ -90,8 +96,19 @@ const key_triggers: [128]KeyTrigger = blk: {
 
 var current_scancode: ScanCode = undefined;
 
+// Better way of handling this?
+var first_interrupt: bool = true;
 fn irq(_: *isr.StackFrame) void {
 	const scancode = cpu.in(KBD_PORT);
+	if (first_interrupt) {
+		first_interrupt = scancode == 0xE0 or scancode == 0xF0;
+		return;
+	}
+	for (&keymap) |*state| {
+		if (state.* == .Click) {
+			state.* = .Down;
+		}
+	}
 	switch (scancode) {
 		0xE0 => current_scancode.prefix = 0xE0,
 		0xF0 => current_scancode.root = 0xFA,
@@ -100,14 +117,10 @@ fn irq(_: *isr.StackFrame) void {
 			for (&key_triggers, 0..) |trigger, i| {
 				const key: u8 = @truncate(i);
 				if (current_scancode == trigger.pressed) {
-					uart.printf("{c} pressed\n\r", .{key});
 					if (keymap[key] == .Up) {
 						keymap[key]=.Click;
-					} else {
-						keymap[key]=.Down;
 					}
 				} else if (current_scancode == trigger.released) {
-					uart.printf("{c} released\n\r", .{key});
 					keymap[key]=.Up;
 				} else {
 					continue;
@@ -116,6 +129,10 @@ fn irq(_: *isr.StackFrame) void {
 			}
 			current_scancode = @bitCast(@as(u24, 0x0));
 		}
+	}
+
+	for (&subscribers) |notify| {
+		notify();
 	}
 }
 
