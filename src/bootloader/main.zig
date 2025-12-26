@@ -1,10 +1,3 @@
-// https://www.programmersought.com/article/77814539630/
-// https://github.com/ziglang/zig/blob/master/lib/std/os/uefi/
-// https://wiki.osdev.org/Rolling_Your_Own_Bootloader
-// https://uefi.org/sites/default/files/resources/UEFI%20Spec%202_6.pdf
-// https://en.wikipedia.org/wiki/Memory_map
-// https://wiki.osdev.org/Memory_management
-
 const console = @import("./console.zig");
 const paging = @import("./paging.zig");
 const loader = @import("./loader.zig");
@@ -15,8 +8,6 @@ const expect = std.testing.expect;
 
 var boot_services: *uefi.tables.BootServices = undefined;
 var runtime_services: *uefi.tables.RuntimeServices = undefined;
-
-const final_msg = "\n\rConventional operating systems are everywhere...\n\rThey are the systems that have been pulled over your eyes to blind you from the truth";
 
 const KERNEL_STACK_PAGES = 6;
 const EMPTY_PAGE_TABLES = 256;
@@ -58,7 +49,6 @@ fn load_mmap() !uefi.tables.MemoryMapSlice {
 // getMemoryMap() and exitBootServices() that could mutate system mmap
 fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 	console.print("Exiting UEFI boot services");
-	console.print(final_msg);
 		
 	const final_mmap = try load_mmap();
 	boot_services.exitBootServices(uefi.handle, final_mmap.info.key) catch |err| {

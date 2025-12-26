@@ -8,6 +8,7 @@ const std = @import("std");
 const keyboard = @import("./drivers/keyboard.zig");
 const Video = @import("./drivers/video.zig");
 const memory = @import("./memory.zig");
+const vmemory = @import("./vmemory.zig");
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
@@ -39,13 +40,14 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 	keyboard.initialize();
 	asm volatile("sti");
 
+	// vmemory.initialize(boot_info.empty_paging_tables);
+	memory.find_memory(boot_info.final_mmap);
+
 	var video = Video.initialize(boot_info.graphics_mode);
 	video.fill_screen(0x0);
-
 	const time, _  = boot_info.runtime_services.getTime() catch unreachable;
 	video.printf("{d:0>2}:{d:0>2}:{d:0>2}> ", .{time.hour, time.minute, time.second});
-
-	memory.find_memory(boot_info.final_mmap);
+	video.render();
 
 	// Shell testing
 	keyboard.subscribers[0] = &video_subscriber;
@@ -78,4 +80,5 @@ fn render(video: *Video) void {
 	str[i] = '_';
 	video.fill_screen(0x0);
 	video.printf("{s}", .{str[0..i+1]});
+	video.render();
 }

@@ -1,10 +1,26 @@
 const uefi = @import("std").os.uefi;
 const uart = @import("./uart.zig");
+const vmemory = @import("./vmemory.zig");
 
 const MemoryBlock = struct {
 	phys_start: u64,
 	n_pages: u64,
-	bytes_used: u64 = 0
+	bytes_used: u64 = 0,
+
+	fn allocate(self: *MemoryBlock, comptime T: type, n: u64) *T {
+		const bytes = @sizeOf(T) * n;
+		uart.printf("Allocating {} kb of physical memory 0x{x} -> 0x{x}\n\r", .{bytes / 1000, self.phys_start, self.phys_start + bytes});
+		if (self.n_pages * 4096 < self.bytes_used + bytes) {
+			 // TODO: Emit error
+		}
+		const ptr: *T = @ptrFromInt(self.phys_start);
+		self.bytes_used += bytes;
+
+		const rem = (self.n_pages * 4096) - self.bytes_used;
+		const mbs: u64 = rem / 1_000_000;
+		uart.printf("{} mbs remaining in allocator block\n\r", .{mbs});
+		return ptr;
+	}
 };
 
 const free_memory_types = [_]uefi.tables.MemoryType {
@@ -17,6 +33,9 @@ var allocator_block: MemoryBlock = .{
 	.n_pages = 0,
 };
 
+pub fn malloc(comptime T: type, n: u64) *T {
+	return allocator_block.allocate(T, n);
+}
 
 // TODO: pre-allocate empty page tables in boot loader
 // to be able to map allocator block in kernel
@@ -50,4 +69,5 @@ pub fn find_memory(mmap: uefi.tables.MemoryMapSlice) void {
 	}
 
 	uart.printf("Chose physical memory block: {}\n\r", .{allocator_block});
+	// vmemory.map_pages(allocator_block.phys_start, allocator_block.n_pages, 0);
 }
