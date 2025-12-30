@@ -148,10 +148,10 @@ fn reloadCs() void {
 	asm volatile (
 		\\mov $0x8, %%rax
 		\\push %%rax
-		\\leaq next(%%rip), %%rax
+		\\leaq next_%=(%%rip), %%rax
 		\\pushq %%rax
 		\\lretq
-		\\next:
+		\\next_%=:
 	);
 }
 

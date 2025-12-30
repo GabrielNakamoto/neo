@@ -18,6 +18,7 @@ const BootInfo = struct {
 	runtime_services: *uefi.tables.RuntimeServices,
 	kernel_paddr: u64,
 	kernel_size: u64,
+	kernel_vaddr: u64,
 	stack_paddr: u64,
 	empty_paging_tables: [][512]u64
 };
@@ -135,6 +136,7 @@ fn bootloader() !void {
 		.runtime_services = runtime_services,
 		.kernel_paddr = kernel_paddr,
 		.kernel_size = kernel_size,
+		.kernel_vaddr = kernel_entry_vaddr,
 		.stack_paddr = @intFromPtr(kernel_stack.ptr),
 		.empty_paging_tables = empty_paging_tables
 	};

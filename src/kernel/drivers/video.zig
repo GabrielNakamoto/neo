@@ -1,6 +1,6 @@
 const uefi = @import("std").os.uefi;
 const std = @import("std");
-const memory = @import("../memory.zig");
+const pmm = @import("../pmm.zig");
 
 // Terminus 8x16 (ter-i16n) font bitmap
 // 128 glyphs
@@ -21,19 +21,21 @@ pub fn initialize(graphics_mode: *uefi.protocol.GraphicsOutput.Mode) Self {
 	const frame_buffer_array: [*]volatile Pixel = @ptrFromInt(graphics_mode.frame_buffer_base);
 	const frame_buffer_len = graphics_mode.frame_buffer_size / @sizeOf(Pixel);
 
-	var swp: []volatile Pixel = &.{};
-	swp.ptr = @ptrCast(memory.malloc(Pixel, frame_buffer_len));
-	swp.len = frame_buffer_len;
+	// var swp: []volatile Pixel = &.{};
+	// swp.ptr = @ptrCast(pmm.malloc(Pixel, frame_buffer_len));
+	// swp.len = frame_buffer_len;
 
 	return .{
 		.frame_buffer = frame_buffer_array[0..frame_buffer_len],
-		.swap_buffer = swp,
+		.swap_buffer = frame_buffer_array[0..frame_buffer_len],
+		// .swap_buffer = swp,
 		.scanline_width = graphics_mode.info.pixels_per_scan_line,
 	};
 }
 
 pub fn render(self: *Self) void {
-	@memcpy(self.frame_buffer, self.swap_buffer);
+	_ = self;
+	// @memcpy(self.frame_buffer, self.swap_buffer);
 }
 
 // Write current text at same time / do buffer swap

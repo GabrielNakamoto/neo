@@ -7,8 +7,9 @@ const elf = @import("std").elf;
 const std = @import("std");
 const keyboard = @import("./drivers/keyboard.zig");
 const Video = @import("./drivers/video.zig");
-const memory = @import("./memory.zig");
-const vmemory = @import("./vmemory.zig");
+const pmm = @import("./pmm.zig");
+const vmm = @import("./vmm.zig");
+const shell = @import("./shell.zig");
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
@@ -16,6 +17,7 @@ const BootInfo = struct {
 	runtime_services: *uefi.tables.RuntimeServices,
 	kernel_paddr: u64,
 	kernel_size: u64,
+	kernel_vaddr: u64,
 	stack_paddr: u64,
 	empty_paging_tables: [][512]u64
 };
@@ -40,45 +42,26 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 	keyboard.initialize();
 	asm volatile("sti");
 
-	// vmemory.initialize(boot_info.empty_paging_tables);
-	memory.find_memory(boot_info.final_mmap);
-
-	var video = Video.initialize(boot_info.graphics_mode);
-	video.fill_screen(0x0);
-	const time, _  = boot_info.runtime_services.getTime() catch unreachable;
-	video.printf("{d:0>2}:{d:0>2}:{d:0>2}> ", .{time.hour, time.minute, time.second});
-	video.render();
+	vmm.initialize(
+		boot_info.empty_paging_tables,
+		boot_info.kernel_paddr,
+		boot_info.kernel_vaddr,
+		boot_info.kernel_size,
+		boot_info.stack_paddr,
+		boot_info.final_mmap
+	);
+	vmm.enable();
+	uart.print("Enabled kernel paging\n\r");
+	// pmm.foo(boot_info.final_mmap);
+	// pmm.map_memory(boot_info.final_mmap);
+	// pmm.build_buddy_list(boot_info.final_mmap);
+	// pmm.find_memory(boot_info.final_mmap);
+	// var video = Video.initialize(boot_info.graphics_mode);
 
 	// Shell testing
-	keyboard.subscribers[0] = &video_subscriber;
+	// shell.initialize(boot_info.runtime_services);
 	while (true) {
-		render(&video);
+		// shell.periodic(&video);
 		cpu.hlt();
 	}
-}
-
-var i: u8 = 0;
-var str: [32]u8 = [_]u8 {0} ** 32;
-fn video_subscriber() void {
-	if (keyboard.is_clicked(0x8) and i > 0) {
-		i -= 1;
-	}
-	if (keyboard.is_clicked(' ')) {
-		str[i]=' ';
-		i += 1;
-	}
-	for ('A'..'Z'+1) |c|{
-		const key: u8 = @truncate(c);
-		if (keyboard.is_clicked(key)) {
-			str[i]=key;
-			i += 1;
-		}
-	}
-}
-
-fn render(video: *Video) void {
-	str[i] = '_';
-	video.fill_screen(0x0);
-	video.printf("{s}", .{str[0..i+1]});
-	video.render();
 }

@@ -65,6 +65,10 @@ pub fn is_clicked(key: u8) bool {
 	return keymap[key] == .Click;
 }
 
+pub fn is_down(key: u8) bool {
+	return keymap[key] == .Down;
+}
+
 var keymap: [256]KeyState = [_]KeyState {.Up} ** 256;
 // Start with ineffient comptime array
 //
@@ -73,36 +77,36 @@ var keymap: [256]KeyState = [_]KeyState {.Up} ** 256;
 //
 // https://webdocs.cs.ualberta.ca/~amaral/courses/329/labs/scancodes.html
 const key_triggers: [128]KeyTrigger = blk: {
-	var foo_triggers: [128]KeyTrigger = undefined;
+	var triggers: [128]KeyTrigger = undefined;
 
 	// Alphanumeric 
 	for ('A'..'Z'+1) |key| {
-		foo_triggers[key] = .{
+		triggers[key] = .{
 			.pressed = .{ .suffix = alphabet_suffix_codes[key-'A'] },
 			.released = .{ .root = 0xFA, .suffix = alphabet_suffix_codes[key-'A'] }
 		};
 	}
 	for ('0'..'9'+1) |key| {
-		foo_triggers[key] = .{
+		triggers[key] = .{
 			.pressed = .{ .suffix = numeric_suffix_codes[key-'0'] },
 			.released = .{ .root = 0xFA, .suffix = numeric_suffix_codes[key-'0'] }
 		};
 	}
 
 	// Space, Backspace and Enter
-	foo_triggers[' '] = .{
+	triggers[' '] = .{
 		.pressed = .{ .suffix = 0x29 },
 		.released = .{ .root=0xFA, .suffix = 0x29 }
 	};
-	foo_triggers[0x8] = .{
+	triggers[0x8] = .{
 		.pressed = .{ .suffix = 0x66 },
 		.released = .{ .root=0xFA, .suffix = 0x66 }
 	};
-	foo_triggers['\n'] = .{
+	triggers['\n'] = .{
 		.pressed = .{ .suffix = 0x5A },
 		.released = .{ .root=0xFA, .suffix = 0x5A }
 	};
-	break :blk foo_triggers;
+	break :blk triggers;
 };
 
 var current_scancode: ScanCode = undefined;
