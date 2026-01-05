@@ -1,6 +1,5 @@
 const uefi = @import("std").os.uefi;
 const std = @import("std");
-const pmm = @import("../pmm.zig");
 
 // Terminus 8x16 (ter-i16n) font bitmap
 // 128 glyphs

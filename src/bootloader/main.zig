@@ -10,7 +10,7 @@ var boot_services: *uefi.tables.BootServices = undefined;
 var runtime_services: *uefi.tables.RuntimeServices = undefined;
 
 const KERNEL_STACK_PAGES = 6;
-const EMPTY_PAGE_TABLES = 256;
+const BOOTSTRAP_PAGES_SIZE = 16; //~65kb
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
@@ -20,9 +20,11 @@ const BootInfo = struct {
 	kernel_size: u64,
 	kernel_vaddr: u64,
 	stack_paddr: u64,
-	empty_paging_tables: [][512]u64
+	bootstrap_pages: []align(4096) [4096]u8
 };
 
+// Preallocate early kernel memory for bootstrapping
+// proper page frame allocator
 
 inline fn hlt() void {
 	asm volatile("hlt");
@@ -91,11 +93,8 @@ fn bootloader() !void {
 		&kernel_size
 	);
 
-	const empty_paging_tables_buffer = try boot_services.allocatePages(.any, .loader_data, EMPTY_PAGE_TABLES);
-
-	var empty_paging_tables: [][512]u64 = &.{};
-	empty_paging_tables.ptr = @ptrCast(empty_paging_tables_buffer.ptr);
-	empty_paging_tables.len = empty_paging_tables_buffer.len;
+	const bootstrap_pages = try boot_services.allocatePages(.any, .loader_data, BOOTSTRAP_PAGES_SIZE);
+	try paging.map_pages(@intFromPtr(bootstrap_pages.ptr), BOOTSTRAP_PAGES_SIZE, 0);
 
 	const graphics_mode = get_graphics();
 	try paging.map_pages(graphics_mode.frame_buffer_base, (graphics_mode.frame_buffer_size+4095)/4096, 0);
@@ -138,7 +137,7 @@ fn bootloader() !void {
 		.kernel_size = kernel_size,
 		.kernel_vaddr = kernel_entry_vaddr,
 		.stack_paddr = @intFromPtr(kernel_stack.ptr),
-		.empty_paging_tables = empty_paging_tables
+		.bootstrap_pages = bootstrap_pages
 	};
 
 	paging.enable();

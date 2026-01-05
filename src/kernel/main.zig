@@ -7,9 +7,10 @@ const elf = @import("std").elf;
 const std = @import("std");
 const keyboard = @import("./drivers/keyboard.zig");
 const Video = @import("./drivers/video.zig");
-const pmm = @import("./pmm.zig");
-const vmm = @import("./vmm.zig");
+const vmm = @import("./memory/vmm.zig");
 const shell = @import("./shell.zig");
+const bump = @import("./memory/bump.zig");
+const buddy = @import("./memory/buddy.zig");
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
@@ -19,7 +20,7 @@ const BootInfo = struct {
 	kernel_size: u64,
 	kernel_vaddr: u64,
 	stack_paddr: u64,
-	empty_paging_tables: [][512]u64
+	bootstrap_pages: [] align(4096) [4096]u8
 };
 
 pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
@@ -33,7 +34,6 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 	uart.print("Initialized serial i/o.\n\r");
 	uart.printf("Kernel paddr: 0x{x}\n\r", .{boot_info.kernel_paddr});
 	uart.printf("Kernel stack addr: 0x{x}\n\r", .{boot_info.stack_paddr});
-	uart.printf("Pre-allocated paging tables: {}\n\r", .{boot_info.empty_paging_tables.len});
 
 	gdt.load();
 	uart.print("Loaded GDT and TSS.\n\r");
@@ -42,17 +42,19 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 	keyboard.initialize();
 	asm volatile("sti");
 
-	vmm.initialize(
-		boot_info.empty_paging_tables,
-		boot_info.kernel_paddr,
-		boot_info.kernel_vaddr,
-		boot_info.kernel_size,
-		boot_info.stack_paddr,
-		boot_info.final_mmap
-	);
-	vmm.enable();
-	uart.print("Enabled kernel paging\n\r");
-	// pmm.foo(boot_info.final_mmap);
+	bump.initialize(boot_info.bootstrap_pages);
+	buddy.initialize(boot_info.final_mmap);
+
+	//vmm.initialize(
+		//boot_info.empty_paging_tables,
+		//boot_info.kernel_paddr,
+		//boot_info.kernel_vaddr,
+		//boot_info.kernel_size,
+		//boot_info.stack_paddr,
+		//boot_info.final_mmap
+	//);
+	//vmm.enable();
+	//uart.print("Enabled kernel paging\n\r");
 	// pmm.map_memory(boot_info.final_mmap);
 	// pmm.build_buddy_list(boot_info.final_mmap);
 	// pmm.find_memory(boot_info.final_mmap);

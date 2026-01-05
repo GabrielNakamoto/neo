@@ -1,5 +1,5 @@
 const std = @import("std");
-const uart = @import("./uart.zig");
+const uart = @import("../uart.zig");
 const uefi = @import("std").os.uefi;
 
 pub const PagingLevel = [512]u64;
