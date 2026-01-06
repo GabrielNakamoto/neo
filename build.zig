@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
 		.root_source_file = b.path("src/kernel/main.zig"),
 		.target = kernel_target,
 		.optimize = .ReleaseSmall,
-		.code_model = .kernel,
+		.code_model = .large,
 	});
 
 	const kernel = b.addExecutable(.{
@@ -63,6 +63,7 @@ pub fn build(b: *std.Build) void {
 	);
 
 	const qemu_cmd = b.addSystemCommand(&.{"qemu-system-x86_64"});
+
 	qemu_cmd.addArg("-serial");
 	qemu_cmd.addArg("mon:stdio");
 

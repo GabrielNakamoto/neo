@@ -30,7 +30,7 @@ inline fn get_level() u64 {
 }
 
 pub fn map_pages(base: u64, npages: u64, delta: u64) void {
-	uart.printf("Mapping {} pages @ 0x{x}\n\r", .{npages, base});
+	uart.printf("Mapping {} pages 0x{x} -> 0x{x}\n\r", .{npages, base, base+delta});
 	const aligned_base = base & ~@as(u64, 0xFFF);
 	const offset = base - aligned_base;
 	const total_size = npages*4096 + offset;

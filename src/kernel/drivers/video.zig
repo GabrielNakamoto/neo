@@ -25,7 +25,7 @@ pub fn initialize() void {
 	const frame_buffer_len = graphics_mode.frame_buffer_size / @sizeOf(Pixel);
 
 	const swap_memory = mem.alloc_pages((graphics_mode.frame_buffer_size + 4095) / 4096);
-	const swap_pixels: []volatile Pixel = @alignCast(std.mem.bytesAsSlice(Pixel, swap_memory));
+	const swap_pixels: [*]volatile Pixel = @ptrCast(@alignCast(swap_memory.ptr));
 
 	frame_buffer = frame_buffer_array[0..frame_buffer_len];
 	swap_buffer = swap_pixels[0..frame_buffer_len];
@@ -60,7 +60,7 @@ pub fn print(str: []const u8) void {
 	}
 }
 
-var format_buffer: [1024]u8 = undefined;
+var format_buffer = std.mem.zeroes([1024]u8);
 pub fn printf(comptime format: []const u8, args: anytype) void {
 	const str = std.fmt.bufPrint(&format_buffer, format, args) catch unreachable;
 	print(str);

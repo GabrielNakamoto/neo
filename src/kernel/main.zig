@@ -28,12 +28,16 @@ pub const BootInfo = struct {
 	bootstrap_pages: [] align(4096) [4096]u8
 };
 
+pub var boot_info: BootInfo = undefined;
+
 pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
 	uart.print("Kernel panicked!");
 	cpu.hang();
 }
 
-export fn kmain(boot_info: *BootInfo) noreturn {
+export fn kmain(old_info: *BootInfo) noreturn {
+	boot_info = old_info.*;
+
 	uart.init_serial();
 	uart.print("\x1B[2J\x1B[H");
 	uart.print("Initialized serial i/o.\n\r");
@@ -52,15 +56,12 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 	keyboard.initialize();
 
 	video.graphics_mode = boot_info.graphics_mode.*;
-	mem.initialize(boot_info);
+	mem.initialize(&boot_info);
 
 	video.initialize();
-	video.fill_screen(0x0);
-	video.render();
-
-	//shell.initialize(boot_info.runtime_services);
+	shell.initialize(boot_info.runtime_services);
 	while (true) {
-		//shell.periodic(&video);
+		shell.periodic();
 		cpu.hlt();
 	}
 }

@@ -1,23 +1,23 @@
 ENTRY(kmain)
 
-KERNEL_VIR_START = 1M;
+V_START = 0xC0000000;
 
 SECTIONS {
-	. = KERNEL_VIR_START;
+	. = V_START; /* does this matter? */
 
-	.text : ALIGN(4K) {
+	.text ALIGN(4K) : {
 		*(.text*)
 	}
 
-	.rodata : ALIGN(4K) {
+	.rodata ALIGN(4K) : {
 		*(.rodata*)
 	}
 
-	.data : ALIGN(4K) {
+	.data ALIGN(4K) : {
 		*(.data*)
 	}
 
-	.bss : ALIGN(4K) {
+	.bss ALIGN(4K) : {
 		*(COMMON)
 		*(.bss*)
 	}
