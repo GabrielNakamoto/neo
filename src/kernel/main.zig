@@ -44,6 +44,9 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 
 	bump.initialize(boot_info.bootstrap_pages);
 	buddy.initialize(boot_info.final_mmap);
+	_ = buddy.alloc(2);
+	_ = buddy.alloc(1);
+	_ = buddy.alloc(2);
 
 	//vmm.initialize(
 		//boot_info.empty_paging_tables,
