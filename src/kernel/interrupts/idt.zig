@@ -1,6 +1,6 @@
 const std = @import("std");
-const cpu = @import("./cpu.zig");
-const uart = @import("./uart.zig");
+const cpu = @import("../cpu.zig");
+const uart = @import("../uart.zig");
 // Gate Types:
 // 1. Interrupt Gate (specify ISR (Interrupt Service Routine))
 // 2. Trap Gate (Exception handlers)

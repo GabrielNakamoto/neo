@@ -1,6 +1,7 @@
 const std = @import("std");
 const uart = @import("../uart.zig");
 const uefi = @import("std").os.uefi;
+const bump = @import("./bump.zig");
 
 pub const PagingLevel = [512]u64;
 const PAGE_ADDR_MASK: u64 =  0x000ffffffffff000; // 52 bit, page aligned address
@@ -12,8 +13,6 @@ const USR_FLAG 			= 1 << 2;
 const STACK_SIZE = 6;
 
 var pml4: *PagingLevel = undefined;
-var empty_paging_tables: []PagingLevel = undefined;
-var tables_used: usize = 0;
 
 pub inline fn enable() void {
 	asm volatile (
@@ -23,14 +22,12 @@ pub inline fn enable() void {
 }
 
 pub fn initialize(
-	allocated: []PagingLevel,
 	kernel_paddr: u64,
 	kernel_vaddr: u64,
 	kernel_size: u64,
 	stack_paddr: u64,
 	mmap: uefi.tables.MemoryMapSlice
 ) void {
-	empty_paging_tables = allocated;
 	pml4 = @ptrFromInt(get_level());
 
 	// Set up kernel paging tables
@@ -43,20 +40,18 @@ pub fn initialize(
 
 	var iter = mmap.iterator();
 	while (iter.next()) |descr| {
-		if (descr.type == .runtime_services_data or descr.type == .runtime_services_code) {
+		if (descr.type == .runtime_services_data or descr.type == .runtime_services_code or descr.type == .loader_data) {
 			map_pages(descr.physical_start, descr.number_of_pages, 0);
 		}
 	}
 }
 
-fn get_level() u64 {
-	const ptr = &empty_paging_tables[tables_used];
-	tables_used += 1;
-	uart.printf("[VMM]\t{}/{} paging tables used\n\r", .{tables_used, empty_paging_tables.len});
-	return @intFromPtr(ptr);
+inline fn get_level() u64 {
+	return @intFromPtr(bump.alloc(PagingLevel));
 }
 
 pub fn map_pages(base: u64, npages: u64, delta: u64) void {
+	uart.printf("Mapping {} pages @ 0x{x}\n\r", .{npages, base});
 	for (0..npages) |p| {
 		const paddr = base + (p*4096);
 		map_addr(paddr + delta, paddr);

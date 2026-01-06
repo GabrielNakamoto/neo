@@ -94,12 +94,10 @@ fn bootloader() !void {
 	);
 
 	const bootstrap_pages = try boot_services.allocatePages(.any, .loader_data, BOOTSTRAP_PAGES_SIZE);
-	try paging.map_pages(@intFromPtr(bootstrap_pages.ptr), BOOTSTRAP_PAGES_SIZE, 0);
-
 	const graphics_mode = get_graphics();
-	try paging.map_pages(graphics_mode.frame_buffer_base, (graphics_mode.frame_buffer_size+4095)/4096, 0);
-
 	const final_mmap_buffer: [*]u8 = @ptrCast(try boot_services.allocatePages(.any, .loader_data, 2));
+
+	try paging.map_pages(@intFromPtr(bootstrap_pages.ptr), BOOTSTRAP_PAGES_SIZE, 0);
 	try paging.map_pages(@intFromPtr(final_mmap_buffer), 2, 0);
 
 	// Allocate boot info

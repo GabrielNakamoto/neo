@@ -1,4 +1,4 @@
-const cpu = @import("./cpu.zig");
+const cpu = @import("../cpu.zig");
 // PIC Ports
 const PIC1_COMMAND 	= 0x20;
 const PIC1_DATA 		= 0x21;

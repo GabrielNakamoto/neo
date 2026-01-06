@@ -1,5 +1,0 @@
-Problem:
-
-
-- I need to have final memory map mapped to current adress space while initializing physical memory
-- But physical memory may need paging enabled??

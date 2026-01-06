@@ -1,10 +1,9 @@
+// A simple buddy page frame allocator
+
 const std = @import("std");
 const uart = @import("../uart.zig");
 const uefi = std.os.uefi;
 const bump = @import("./bump.zig");
-// A simple buddy page frame allocator
-
-// https://www.researchgate.net/publication/324435676_A_Non-blocking_Buddy_System_for_Scalable_Memory_Allocation_on_Multi-core_Machines
 
 const PageFrame = [4096]u8;
 const PAGE_SIZE = 4096;
@@ -20,14 +19,14 @@ const TOTAL_NODES = (LEAF_COUNT << 1) - 1;
 
 inline fn get_physical_start(subtree: u64, l: u64, node: u64) u64 {
 	const level_offset = node - (@as(u64,1) << @truncate(l));
-	const pages = @as(u64,1) << @truncate(l);
+	const pages = @as(u64,1) << @truncate(DEPTH - l);
 	return memory_region_start + (subtree*LEAF_COUNT + level_offset*pages)*PAGE_SIZE;
 }
 
 inline fn get_level(pages: u64) u6 {
 	var partition: f64 = @floatFromInt(LEAF_COUNT);
 	partition /= @floatFromInt(pages);
-	const level: u6 = @intFromFloat(@ceil(@log2(partition)));
+	const level: u6 = @intFromFloat(@floor(@log2(partition)));
 	return @min(level, DEPTH);
 }
 
@@ -131,7 +130,7 @@ fn prop_occupy_up(level: usize, node: usize, subtree: usize) void {
 	prop_occupy_up(level-1, parent, subtree);
 }
 
-pub fn alloc(pages: u64) [*]PageFrame {
+pub fn alloc(pages: u64) []PageFrame {
 	// start with linear search
 	const l = get_level(pages);
 	const range_start, const range_end_inclusive = get_level_range(@intCast(l));
@@ -153,7 +152,8 @@ pub fn alloc(pages: u64) [*]PageFrame {
 
 					prop_occupy_up(l, i, w);
 
-					return @ptrFromInt(get_physical_start(w, l, i));
+					const frame_ptr: [*]PageFrame = @ptrFromInt(get_physical_start(w, l, i));
+					return frame_ptr[0..pages];
 			}
 		}
 	}

@@ -1,7 +1,7 @@
 const cpu = @import("../cpu.zig");
 const uart = @import("../uart.zig");
-const pic = @import("../pic.zig");
-const isr = @import("../isr.zig");
+const pic = @import("../interrupts/pic.zig");
+const isr = @import("../interrupts/isr.zig");
 const std = @import("std");
 
 const CMD_PORT: u8 	= 0x64;

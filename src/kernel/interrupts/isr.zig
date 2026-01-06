@@ -1,7 +1,7 @@
 const std = @import("std");
 const idt = @import("./idt.zig");
-const cpu = @import("./cpu.zig");
-const uart = @import("./uart.zig");
+const cpu = @import("../cpu.zig");
+const uart = @import("../uart.zig");
 const pic = @import("./pic.zig");
 
 // https://wiki.osdev.org/Exceptions
