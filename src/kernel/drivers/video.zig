@@ -9,6 +9,8 @@ const uart = @import("../uart.zig");
 const RAW_BITMAP = @embedFile("./font.bin");
 const Pixel = u32;
 
+pub var graphics_mode = std.mem.zeroes(uefi.protocol.GraphicsOutput.Mode);
+
 var foreground: Pixel = 0xFFFFFFFF;
 var background: Pixel = 0x0;
 var scanline_width: u32 = 0;
@@ -18,17 +20,15 @@ const font_bitmap: *const[128][16]u8 = @ptrCast(RAW_BITMAP);
 var frame_buffer: []volatile Pixel = &.{};
 var swap_buffer: []volatile Pixel = &.{};
 
-pub fn initialize(graphics_mode: *uefi.protocol.GraphicsOutput.Mode) void {
-	const frame_buffer_len = graphics_mode.frame_buffer_size / @sizeOf(Pixel);
+pub fn initialize() void {
 	const frame_buffer_array: [*]volatile Pixel = @ptrFromInt(graphics_mode.frame_buffer_base);
-	vmm.map_pages(graphics_mode.frame_buffer_base, (frame_buffer_len + 4095) / 4096, 0);
+	const frame_buffer_len = graphics_mode.frame_buffer_size / @sizeOf(Pixel);
 
-	// var swp: []volatile Pixel = &.{};
-	// swp.ptr = @ptrCast(pmm.malloc(Pixel, frame_buffer_len));
-	// swp.len = frame_buffer_len;
+	const swap_memory = mem.alloc_pages((graphics_mode.frame_buffer_size + 4095) / 4096);
+	const swap_pixels: []volatile Pixel = @alignCast(std.mem.bytesAsSlice(Pixel, swap_memory));
 
 	frame_buffer = frame_buffer_array[0..frame_buffer_len];
-	swap_buffer = frame_buffer_array[0..frame_buffer_len];
+	swap_buffer = swap_pixels[0..frame_buffer_len];
 	scanline_width = graphics_mode.info.pixels_per_scan_line;
 }
 

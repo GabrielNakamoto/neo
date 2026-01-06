@@ -46,17 +46,17 @@ export fn kmain(boot_info: *BootInfo) noreturn {
 	pic.initialize();
 	isr.install();
 	idt.load();
+	asm volatile("sti");
 	uart.print("Initialized interrupts.\n\r");
 
 	keyboard.initialize();
-	asm volatile("sti");
 
+	video.graphics_mode = boot_info.graphics_mode.*;
 	mem.initialize(boot_info);
-	_ = mem.alloc_pages(5);
-	_ = mem.alloc_pages(1);
-	_ = mem.alloc_pages(2);
 
-	// video.initialize(boot_info.graphics_mode);
+	video.initialize();
+	video.fill_screen(0x0);
+	video.render();
 
 	//shell.initialize(boot_info.runtime_services);
 	while (true) {

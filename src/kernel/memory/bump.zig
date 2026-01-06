@@ -1,4 +1,5 @@
 const std = @import("std");
+const uart = @import("../uart.zig");
 
 var fbase: usize = undefined;
 var ftop: usize = undefined;
@@ -15,5 +16,7 @@ pub fn alloc(comptime T: type) *T {
 	}
 	const value: *T = @ptrFromInt(fbase);
 	fbase += bytes;
+
+	uart.printf("[Bump] allocated {} bytes, {} remaining\n\r", .{bytes, ftop-fbase});
 	return value;
 }

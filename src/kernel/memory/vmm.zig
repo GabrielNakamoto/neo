@@ -10,8 +10,6 @@ const PRESENT_FLAG 	= 1 << 0;
 const RW_FLAG 			= 1 << 1;
 const USR_FLAG 			= 1 << 2;
 
-const STACK_SIZE = 6;
-
 var pml4: *PagingLevel = undefined;
 
 pub inline fn enable() void {
@@ -21,46 +19,31 @@ pub inline fn enable() void {
 	);
 }
 
-pub fn initialize(
-	kernel_paddr: u64,
-	kernel_vaddr: u64,
-	kernel_size: u64,
-	stack_paddr: u64,
-	mmap: uefi.tables.MemoryMapSlice
-) void {
+pub inline fn initialize() void {
 	pml4 = @ptrFromInt(get_level());
-
-	// Set up kernel paging tables
-	// We need to map:
-	// - Kernel code and data
-	// - Kernel stack
-	// - Runtime uefi services
-	map_pages(kernel_paddr, kernel_size, kernel_vaddr - kernel_paddr);
-	map_pages(stack_paddr, STACK_SIZE, 0);
-
-	var iter = mmap.iterator();
-	while (iter.next()) |descr| {
-		if (descr.type == .runtime_services_data or descr.type == .runtime_services_code or descr.type == .loader_data) {
-			map_pages(descr.physical_start, descr.number_of_pages, 0);
-		}
-	}
 }
 
 inline fn get_level() u64 {
-	return @intFromPtr(bump.alloc(PagingLevel));
+	const ptr = bump.alloc(PagingLevel);
+	@memset(ptr, 0);
+	return @intFromPtr(ptr);
 }
 
 pub fn map_pages(base: u64, npages: u64, delta: u64) void {
 	uart.printf("Mapping {} pages @ 0x{x}\n\r", .{npages, base});
-	for (0..npages) |p| {
-		const paddr = base + (p*4096);
+	const aligned_base = base & ~@as(u64, 0xFFF);
+	const offset = base - aligned_base;
+	const total_size = npages*4096 + offset;
+	const total_pages = (total_size+4095)/4096;
+	for (0..total_pages) |p| {
+		const paddr = aligned_base + (p*4096);
 		map_addr(paddr + delta, paddr);
 	}
 }
 
 // Allocates memory for, and fills paging tables as necessary to have a page entry, mapping vaddr -> paddr
 // Basically ported from here: https://blog.llandsmeer.com/tech/2019/07/21/uefi-x64-userland.html
-pub fn map_addr(vaddr: u64, paddr: u64) void {
+fn map_addr(vaddr: u64, paddr: u64) void {
 	const flags = PRESENT_FLAG | RW_FLAG | USR_FLAG;
 
 	// (4) Page Map Level 4
