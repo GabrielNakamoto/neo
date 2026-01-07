@@ -1,9 +1,9 @@
-ENTRY(kmain)
+ENTRY(_start)
 
-V_START = 0xC0000000;
+__kernel_virtual_start = 0xC0000000;
 
 SECTIONS {
-	. = V_START; /* does this matter? */
+	. = __kernel_virtual_start;
 
 	.text ALIGN(4K) : {
 		*(.text*)
@@ -18,9 +18,15 @@ SECTIONS {
 	}
 
 	.bss ALIGN(4K) : {
-		*(COMMON)
 		*(.bss*)
+		*(COMMON)
+
+		. = ALIGN(4K);
+		__bootstrap_mem_start = .;
+		. += 64K;
+		__bootstrap_mem_end = .;
 	}
+
 
 	/DISCARD/ : {
 		*(.eh_frame*)

@@ -9,18 +9,23 @@ const expect = std.testing.expect;
 var boot_services: *uefi.tables.BootServices = undefined;
 var runtime_services: *uefi.tables.RuntimeServices = undefined;
 
-const KERNEL_STACK_PAGES = 6;
 const BOOTSTRAP_PAGES_SIZE = 16; //~65kb
 
 const BootInfo = struct {
 	final_mmap: uefi.tables.MemoryMapSlice,
-	graphics_mode: *uefi.protocol.GraphicsOutput.Mode,
+	fb_info: FramebufferInfo,
 	runtime_services: *uefi.tables.RuntimeServices,
 	kernel_paddr: u64,
 	kernel_size: u64,
-	kernel_vaddr: u64,
-	stack_paddr: u64,
-	bootstrap_pages: []align(4096) [4096]u8
+};
+
+const FramebufferInfo = struct {
+	base: u64,
+	size: u64,
+	width: u32,
+	height: u32,
+	scanline_width: u32,
+	format: uefi.protocol.GraphicsOutput.PixelFormat
 };
 
 // Preallocate early kernel memory for bootstrapping
@@ -61,9 +66,23 @@ fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 	return final_mmap;
 }
 
-fn get_graphics() *uefi.protocol.GraphicsOutput.Mode {
+fn get_fb_info(fb_info: *FramebufferInfo) !void {
 	const gop_protocol = boot_services.locateProtocol(uefi.protocol.GraphicsOutput, null) catch unreachable;
-	return gop_protocol.?.mode;
+	if (gop_protocol) |proto| {
+		const mode = proto.mode;
+		const info = mode.info;
+
+		fb_info.* = .{
+			.base = mode.frame_buffer_base,
+			.size = mode.frame_buffer_size,
+			.width = info.horizontal_resolution,
+			.height = info.vertical_resolution,
+			.scanline_width = info.pixels_per_scan_line,
+			.format = info.pixel_format,
+		};
+	} else {
+		return error.NoGopProtocol;
+	}
 }
 
 fn bootloader() !void {
@@ -81,28 +100,24 @@ fn bootloader() !void {
 	const fsp = try boot_services.locateProtocol(uefi.protocol.SimpleFileSystem, null);
 	const root_filesystem = try fsp.?.openVolume();
 
+	// Allocate boot info
+	const boot_info: *BootInfo = @ptrCast(@alignCast((try boot_services.allocatePool(.loader_data, @sizeOf(BootInfo))).ptr));
+	boot_info.runtime_services = runtime_services;
+
 	// Load kernel segments
 	var kernel_entry_vaddr: u64 = undefined;
-	var kernel_paddr: u64 = undefined;
-	var kernel_size: u64 = undefined;
 	try loader.load_kernel_image(
 		root_filesystem,
 		kernel_path,
 		&kernel_entry_vaddr,
-		&kernel_paddr,
-		&kernel_size
+		&boot_info.kernel_paddr,
+		&boot_info.kernel_size
 	);
 
-	const bootstrap_pages = try boot_services.allocatePages(.any, .loader_data, BOOTSTRAP_PAGES_SIZE);
-	const graphics_mode = get_graphics();
 	const final_mmap_buffer: [*]u8 = @ptrCast(try boot_services.allocatePages(.any, .loader_data, 2));
-
-	try paging.map_pages(@intFromPtr(bootstrap_pages.ptr), BOOTSTRAP_PAGES_SIZE, 0);
 	try paging.map_pages(@intFromPtr(final_mmap_buffer), 2, 0);
 
-	// Allocate boot info
-	const kernel_stack = try boot_services.allocatePages(.any, .loader_data, KERNEL_STACK_PAGES);
-	const boot_info: *BootInfo = @ptrCast(@alignCast((try boot_services.allocatePool(.loader_data, @sizeOf(BootInfo))).ptr));
+	try get_fb_info(&boot_info.fb_info);
 
  	// Identity map relevant memory map sections
 	const mmap = try load_mmap();
@@ -126,27 +141,14 @@ fn bootloader() !void {
 	const copy_len = final_mmap.info.len * final_mmap.info.descriptor_size;
 	@memcpy(final_mmap_buffer, final_mmap.ptr[0..copy_len]);
 	final_mmap.ptr = @alignCast(final_mmap_buffer);
-
-	boot_info.* = .{
-		.final_mmap = final_mmap,
-		.graphics_mode = graphics_mode,
-		.runtime_services = runtime_services,
-		.kernel_paddr = kernel_paddr,
-		.kernel_size = kernel_size,
-		.kernel_vaddr = kernel_entry_vaddr,
-		.stack_paddr = @intFromPtr(kernel_stack.ptr),
-		.bootstrap_pages = bootstrap_pages
-	};
+	boot_info.final_mmap = final_mmap;
 
 	paging.enable();
 
 	asm volatile (
 		\\mov %[boot_info], %%rdi
-		\\mov %[kernel_stack_top], %%rsp
 		\\jmpq *%[entry]
-		:
-		: [kernel_stack_top] "r" (@intFromPtr(kernel_stack.ptr) + (KERNEL_STACK_PAGES * 4096)),
-			[boot_info] "r" (boot_info),
+		::[boot_info] "r" (boot_info),
 		  [entry] "r" (kernel_entry_vaddr)
 		: .{ .memory = true }
 	);

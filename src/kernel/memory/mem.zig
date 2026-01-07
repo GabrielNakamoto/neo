@@ -5,16 +5,14 @@ const pmm = @import("./buddy.zig");
 const vmm = @import("./vmm.zig");
 const uart = @import("../uart.zig");
 const BootInfo = @import("../main.zig").BootInfo;
+const layout = @import("../layout.zig");
 
-const KERNEL_STACK_SIZE = 6;
-
-pub inline fn initialize(boot_info: *BootInfo) void {
-	bump.initialize(boot_info.bootstrap_pages);
+pub fn initialize(boot_info: *BootInfo) void {
+	bump.initialize(boot_info.kernel_paddr);
 	pmm.initialize(boot_info.final_mmap);
 	vmm.initialize();
 
 	// Initial mappings
-	vmm.map_pages(boot_info.stack_paddr, KERNEL_STACK_SIZE, 0);
 	var iter = boot_info.final_mmap.iterator();
 	while (iter.next()) |descr| {
 		if (descr.type == .runtime_services_data or descr.type == .runtime_services_code or descr.type == .loader_data) {
@@ -24,16 +22,16 @@ pub inline fn initialize(boot_info: *BootInfo) void {
 	vmm.map_pages(
 		boot_info.kernel_paddr,
 		boot_info.kernel_size,
-		boot_info.kernel_vaddr - boot_info.kernel_paddr
+		layout.kernelVirtStart() - boot_info.kernel_paddr
 	);
 	vmm.map_pages(
-		boot_info.graphics_mode.frame_buffer_base,
-		(boot_info.graphics_mode.frame_buffer_size + 4095) / 4096,
+		boot_info.fb_info.base,
+		(boot_info.fb_info.size + 4095) / 4096,
 		0
 	);
 
 	vmm.enable();
-	uart.print("Initialized memory management\n\r");
+	uart.print("Enabled paging\n\r");
 }
 
 pub fn alloc_pages(n: u64) [][4096]u8 {

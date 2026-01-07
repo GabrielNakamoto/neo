@@ -1,12 +1,14 @@
 const std = @import("std");
 const uart = @import("../uart.zig");
+const layout = @import("../layout.zig");
 
-var fbase: usize = undefined;
-var ftop: usize = undefined;
+// Physical addresses!
+var fbase: usize = 0;
+var ftop: usize = 0;
 
-pub fn initialize(bootstrap_pages: []align(4096)[4096]u8) void {
-	fbase = @intFromPtr(bootstrap_pages.ptr);
-	ftop = fbase + bootstrap_pages.len * 4096;
+pub fn initialize(kernel_paddr: u64) void {
+	fbase = kernel_paddr + layout.bootstrapMemStart() - layout.kernelVirtStart();
+	ftop = kernel_paddr + layout.bootstrapMemEnd() - layout.kernelVirtStart();
 }
 
 pub fn alloc(comptime T: type) *T {

@@ -40,7 +40,7 @@ pub fn set_gate(index: usize, seg_selector: u16, offset: u64, gate_type: u4) voi
 
 pub fn load() void {
 	const idt_descriptor: IDTDescriptor = .{
-		.size = (@bitSizeOf(IDTDescriptor) * idt.len / 8) - 1,
+		.size = (@sizeOf(IDTDescriptor) * idt.len) - 1,
 		.offset = @intFromPtr(&idt)
 	};
 

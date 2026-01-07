@@ -21,6 +21,8 @@ var frame_buffer: []volatile Pixel = &.{};
 var swap_buffer: []volatile Pixel = &.{};
 
 pub fn initialize() void {
+	uart.printf("UEFI System frame buffer located at physical: 0x{x}\n\r", .{graphics_mode.frame_buffer_base});
+
 	const frame_buffer_array: [*]volatile Pixel = @ptrFromInt(graphics_mode.frame_buffer_base);
 	const frame_buffer_len = graphics_mode.frame_buffer_size / @sizeOf(Pixel);
 

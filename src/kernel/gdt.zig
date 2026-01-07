@@ -1,4 +1,5 @@
-const uefi = @import("std").os.uefi;
+const std = @import("std");
+const uefi = std.os.uefi;
 const cpu = @import("./cpu.zig");
 
 const SegmentDescriptor = packed struct {
@@ -116,7 +117,7 @@ var global_descriptor_table: GDT = .{
 };
 
 // Empty tss?
-const task_state_segment: TSS = undefined;
+const task_state_segment = std.mem.zeroes(TSS);
 
 // https://wiki.osdev.org/Global_Descriptor_Table#Long_Mode_System_Segment_Descriptor
 pub fn describe_tss(base: u64, size: u20) void {
@@ -131,7 +132,7 @@ pub fn describe_tss(base: u64, size: u20) void {
 }
 
 // Reload segment registers with kernel data seg selector
-fn reloadSegments() void {
+inline fn reloadSegments() void {
 	asm volatile (
 		\\mov $0x10, %%rax
 		\\mov %%rax, %%ds
@@ -144,7 +145,7 @@ fn reloadSegments() void {
 }
 
 // Relead code segment register with kernel code seg selector
-fn reloadCs() void {
+inline fn reloadCs() void {
 	asm volatile (
 		\\mov $0x8, %%rax
 		\\push %%rax
