@@ -5,31 +5,12 @@ const uefi = @import("std").os.uefi;
 const elf = @import("std").elf;
 const std = @import("std");
 const expect = std.testing.expect;
+const shared = @import("shared");
 
 var boot_services: *uefi.tables.BootServices = undefined;
 var runtime_services: *uefi.tables.RuntimeServices = undefined;
 
 const BOOTSTRAP_PAGES_SIZE = 16; //~65kb
-
-const BootInfo = struct {
-	final_mmap: uefi.tables.MemoryMapSlice,
-	fb_info: FramebufferInfo,
-	runtime_services: *uefi.tables.RuntimeServices,
-	kernel_paddr: u64,
-	kernel_size: u64,
-};
-
-const FramebufferInfo = struct {
-	base: u64,
-	size: u64,
-	width: u32,
-	height: u32,
-	scanline_width: u32,
-	format: uefi.protocol.GraphicsOutput.PixelFormat
-};
-
-// Preallocate early kernel memory for bootstrapping
-// proper page frame allocator
 
 inline fn hlt() void {
 	asm volatile("hlt");
@@ -66,7 +47,7 @@ fn exit_boot_services() !uefi.tables.MemoryMapSlice {
 	return final_mmap;
 }
 
-fn get_fb_info(fb_info: *FramebufferInfo) !void {
+fn get_fb_info(fb_info: *shared.FramebufferInfo) !void {
 	const gop_protocol = boot_services.locateProtocol(uefi.protocol.GraphicsOutput, null) catch unreachable;
 	if (gop_protocol) |proto| {
 		const mode = proto.mode;
@@ -101,7 +82,7 @@ fn bootloader() !void {
 	const root_filesystem = try fsp.?.openVolume();
 
 	// Allocate boot info
-	const boot_info: *BootInfo = @ptrCast(@alignCast((try boot_services.allocatePool(.loader_data, @sizeOf(BootInfo))).ptr));
+	const boot_info: *shared.BootInfo = @ptrCast(@alignCast((try boot_services.allocatePool(.loader_data, @sizeOf(shared.BootInfo))).ptr));
 	boot_info.runtime_services = runtime_services;
 
 	// Load kernel segments

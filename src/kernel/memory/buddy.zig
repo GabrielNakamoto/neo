@@ -1,5 +1,4 @@
 // A simple buddy page frame allocator
-
 const std = @import("std");
 const uart = @import("../uart.zig");
 const uefi = std.os.uefi;
@@ -16,6 +15,7 @@ var actual_width: u64 = 0;
 
 const LEAF_COUNT = 1 << DEPTH;
 const TOTAL_NODES = (LEAF_COUNT << 1) - 1;
+
 
 inline fn get_physical_start(subtree: u64, l: u64, node: u64) u64 {
 	const level_offset = node - (@as(u64,1) << @truncate(l));
@@ -44,56 +44,6 @@ var free_trees = std.mem.zeroes([TOP_LEVEL_WIDTH][TOTAL_NODES]u1);
 var memory_region_start: u64 = 0;
 var memory_region_size: u64 = 0;
 
-const free_memory_types = [_]uefi.tables.MemoryType {
-	.conventional_memory, .boot_services_code, .boot_services_data
-};
-
-fn is_free_descriptor(descr: *uefi.tables.MemoryDescriptor) bool {
-	for (free_memory_types) |tp| {
-		if (descr.type == tp) return true;
-	}
-	return false;
-}
-
-// Initialize buddy node states
-pub fn initialize(mmap: uefi.tables.MemoryMapSlice) void {
-	var iter = mmap.iterator();
-	var largest_free_start: u64 = 0;
-	var largest_free_size: u64 = 0;
-	var current_start: u64 = 0;
-	var current_size: u64 = 0;
-	var last_free = false;
-	while (iter.next()) |descr| {
-		if (! is_free_descriptor(descr)) {
-			last_free = false;
-			continue;
-		}
-
-		if (last_free) {
-			current_size += descr.number_of_pages;
-		} else {
-			current_start = descr.physical_start;
-			current_size = descr.number_of_pages;
-		}
-		last_free = true;
-
-		if (current_size > largest_free_size) {
-			largest_free_size = current_size;
-			largest_free_start = current_start;
-		}
-	}
-	uart.printf("Largest contigous free memory zone at 0x{x} with {} pages\n\r", .{largest_free_start, largest_free_size});
-
-	// TODO: Maybe update tree allocation to use bump allocator at runtime for better coverage (match actual size)?
-	var total_size: usize = @min(largest_free_size, LEAF_COUNT * TOP_LEVEL_WIDTH);
-	total_size -= total_size % LEAF_COUNT;
-
-	actual_width = total_size /  LEAF_COUNT;
-	memory_region_start = largest_free_start;
-	memory_region_size = total_size;
-	uart.printf("Initialized buddy allocator over region: 0x{x} with truncated size: {}mib\n\r", .{memory_region_start, memory_region_size * 4096 / 1_048_576});
-}
-
 // Recursively checks if any child nodes are occupied
 fn is_free(level: usize, node: usize, subtree: usize) bool {
 	if (level == DEPTH) {
@@ -114,6 +64,7 @@ fn is_free(level: usize, node: usize, subtree: usize) bool {
 	return is_free(level+1, lchild, subtree) and is_free(level+1, rchild, subtree);
 }
 
+// Recursively update parent states if sibling is also occupied
 fn prop_occupy_up(level: usize, node: usize, subtree: usize) void {
 	if (level == 0) return;
 
@@ -128,6 +79,21 @@ fn prop_occupy_up(level: usize, node: usize, subtree: usize) void {
 	const parent = parent_level_start + @as(u64, @intFromFloat(@ceil(parent_idx)));
 
 	prop_occupy_up(level-1, parent, subtree);
+}
+
+
+// --- API ---
+
+
+pub fn initialize(largest_free_start: u64, largest_free_size: u64) void {
+	// TODO: Maybe update tree allocation to use bump allocator at runtime for better coverage (match actual size)?
+	var total_size: usize = @min(largest_free_size, LEAF_COUNT * TOP_LEVEL_WIDTH);
+	total_size -= total_size % LEAF_COUNT;
+
+	actual_width = total_size /  LEAF_COUNT;
+	memory_region_start = largest_free_start;
+	memory_region_size = total_size;
+	uart.printf("Initialized buddy allocator over region: 0x{x} with truncated size: {}mib\n\r", .{memory_region_start, memory_region_size * 4096 / 1_048_576});
 }
 
 pub fn alloc(pages: u64) []PageFrame {

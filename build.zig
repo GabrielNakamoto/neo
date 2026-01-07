@@ -15,12 +15,26 @@ pub fn build(b: *std.Build) void {
 		.ofmt = .coff,
 	});
 
+	const shared_kernel = b.createModule(.{
+		.root_source_file = b.path("src/shared/lib.zig"),
+		.target = kernel_target,
+		.optimize = .ReleaseSmall,
+		.code_model = .large
+	});
+
+	const shared_boot = b.createModule(.{
+		.root_source_file = b.path("src/shared/lib.zig"),
+		.target = boot_target,
+		.optimize = .ReleaseSmall
+	});
+
 	const kernel_mod = b.createModule(.{
 		.root_source_file = b.path("src/kernel/main.zig"),
 		.target = kernel_target,
 		.optimize = .ReleaseSmall,
 		.code_model = .large,
 	});
+	kernel_mod.addImport("shared", shared_kernel);
 
 	const kernel = b.addExecutable(.{
 		.name = "kernel.elf",
@@ -37,6 +51,7 @@ pub fn build(b: *std.Build) void {
 		.target = boot_target,
 		.optimize = .ReleaseSmall,
 	});
+	boot_mod.addImport("shared", shared_boot);
 
 	const boot = b.addExecutable(.{
 		.name = "bootx64",

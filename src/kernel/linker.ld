@@ -26,6 +26,7 @@ SECTIONS {
 		. += 128K;
 		__bootstrap_mem_end = .;
 	}
+	__kernel_virtual_end = .;
 
 
 	/DISCARD/ : {

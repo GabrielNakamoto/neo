@@ -3,6 +3,8 @@ const uart = @import("../uart.zig");
 const uefi = @import("std").os.uefi;
 const bump = @import("./bump.zig");
 const buddy = @import("./buddy.zig");
+const shared = @import("shared");
+const layout = @import("../layout.zig");
 
 pub const PagingLevel = [512]u64;
 const PAGE_ADDR_MASK: u64 =  0x000ffffffffff000; // 52 bit, page aligned address
@@ -20,8 +22,40 @@ pub inline fn enable() void {
 	);
 }
 
-pub inline fn initialize() void {
+pub fn initialize(boot_info: *shared.BootInfo) void {
 	pml4 = @ptrFromInt(get_level());
+
+	// Initial mappings
+	var iter = boot_info.final_mmap.iterator();
+	while (iter.next()) |descr| {
+		if (descr.type == .runtime_services_data or descr.type == .runtime_services_code) {
+			map_pages(descr.physical_start, descr.number_of_pages, 0);
+		}
+	}
+
+	// keep kernel identity mapped to start
+	map_pages(
+		boot_info.kernel_paddr,
+		boot_info.kernel_size,
+		0
+	);
+
+	// Higher Half Mapping
+	map_pages(
+		boot_info.kernel_paddr,
+		boot_info.kernel_size,
+		layout.kernelVirtStart() - boot_info.kernel_paddr
+	);
+
+	// Framebuffer
+	map_pages(
+		boot_info.fb_info.base,
+		(boot_info.fb_info.size + 4095) / 4096,
+		0
+	);
+
+	enable();
+	uart.print("Enabled paging\n\r");
 }
 
 inline fn get_level() u64 {
@@ -31,7 +65,7 @@ inline fn get_level() u64 {
 }
 
 pub fn map_pages(base: u64, npages: u64, delta: u64) void {
-	uart.printf("Mapping {} pages 0x{x} -> 0x{x}\n\r", .{npages, base, base+delta});
+	uart.printf("[Paging] Mapping {} pages 0x{x} -> 0x{x}\n\r", .{npages, base, base+delta});
 	const aligned_base = base & ~@as(u64, 0xFFF);
 	const offset = base - aligned_base;
 	const total_size = npages*4096 + offset;

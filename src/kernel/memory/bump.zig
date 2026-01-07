@@ -3,8 +3,8 @@ const uart = @import("../uart.zig");
 const layout = @import("../layout.zig");
 
 // Physical addresses!
-var fbase: usize = 0;
-var ftop: usize = 0;
+pub var fbase: usize = 0;
+pub var ftop: usize = 0;
 
 pub fn initialize(kernel_paddr: u64) void {
 	fbase = kernel_paddr + layout.bootstrapMemStart() - layout.kernelVirtStart();

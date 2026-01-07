@@ -8,35 +8,22 @@ const gdt = @import("./gdt.zig");
 const uart = @import("./uart.zig");
 
 const keyboard = @import("./drivers/keyboard.zig");
-const video = @import("./drivers/video.zig");
-const shell = @import("./shell.zig");
+// const video = @import("./drivers/video.zig");
+// const shell = @import("./shell.zig");
 
-const mem = @import("./memory/mem.zig");
+const bump = @import("./memory/bump.zig");
+const pmm = @import("./memory/pmm.zig");
+const vmm = @import("./memory/vmm.zig");
+const heap = @import("./memory/heap.zig");
 
 const isr = @import("./interrupts/isr.zig");
 const idt = @import("./interrupts/idt.zig");
 const pic = @import("./interrupts/pic.zig");
 
 const layout = @import("./layout.zig");
+const shared = @import("shared");
 
-pub const BootInfo = struct {
-	final_mmap: uefi.tables.MemoryMapSlice,
-	fb_info: FramebufferInfo,
-	runtime_services: *uefi.tables.RuntimeServices,
-	kernel_paddr: u64,
-	kernel_size: u64,
-};
-
-pub const FramebufferInfo = struct {
-	base: u64,
-	size: u64,
-	width: u32,
-	height: u32,
-	scanline_width: u32,
-	format: uefi.protocol.GraphicsOutput.PixelFormat
-};
-
-pub var boot_info: BootInfo = undefined;
+pub var boot_info: shared.BootInfo = undefined;
 var stack_memory: [16 * 1024]u8 align(16) linksection(".bss") = undefined;
 
 pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
@@ -54,7 +41,7 @@ export fn _start() callconv(.naked) noreturn {
 	);
 }
 
-export fn kmain(old_info: *BootInfo) noreturn {
+export fn kmain(old_info: *shared.BootInfo) noreturn {
 	boot_info = old_info.*;
 
 	uart.init_serial();
@@ -73,13 +60,20 @@ export fn kmain(old_info: *BootInfo) noreturn {
 
 	keyboard.initialize();
 
-	mem.initialize(&boot_info);
-	uart.printf("UEFI Frame buffer: 0x{x}\n\r", .{boot_info.fb_info.base});
+	pmm.initialize(&boot_info);
+	vmm.initialize(&boot_info);
+	heap.init();
 
-	video.initialize(&boot_info.fb_info);
-	shell.initialize(boot_info.runtime_services);
+	const x = heap.create(u32) catch unreachable;
+	x.* = 10;
+	uart.printf("First dynamic variable: {}\n\r", .{x.*});
+
+	//video.initialize(&boot_info.fb_info);
+	//video.fill_screen(0x0);
+	//video.render();
+	// shell.initialize(boot_info.runtime_services);
 	while (true) {
-		shell.periodic();
+		// shell.periodic();
 		cpu.hlt();
 	}
 }
