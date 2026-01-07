@@ -23,7 +23,7 @@ SECTIONS {
 
 		. = ALIGN(4K);
 		__bootstrap_mem_start = .;
-		. += 64K;
+		. += 128K;
 		__bootstrap_mem_end = .;
 	}
 

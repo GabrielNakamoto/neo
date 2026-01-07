@@ -38,6 +38,7 @@ pub fn alloc_pages(n: u64) [][4096]u8 {
 	const physical_slice = pmm.alloc(n);
 	// TODO: dont identity map?
 	vmm.map_pages(@intFromPtr(physical_slice.ptr), physical_slice.len, 0);
+	uart.printf("[Memory Manager] allocated and mapped {} pages\n\r", .{n});
 	return physical_slice;
 }
 

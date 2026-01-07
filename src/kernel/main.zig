@@ -27,7 +27,7 @@ pub const BootInfo = struct {
 	kernel_size: u64,
 };
 
-const FramebufferInfo = struct {
+pub const FramebufferInfo = struct {
 	base: u64,
 	size: u64,
 	width: u32,
@@ -62,7 +62,6 @@ export fn kmain(old_info: *BootInfo) noreturn {
 	uart.print("Initialized serial i/o.\n\r");
 	uart.printf("Kernel paddr: 0x{x}\n\r", .{boot_info.kernel_paddr});
 
-
 	gdt.load();
 	uart.print("Loaded GDT and TSS.\n\r");
 
@@ -75,13 +74,12 @@ export fn kmain(old_info: *BootInfo) noreturn {
 	keyboard.initialize();
 
 	mem.initialize(&boot_info);
-	cpu.hang();
-	// uart.printf("UEFI Frame buffer: 0x{x}\n\r", .{boot_info.fb_info.base});
+	uart.printf("UEFI Frame buffer: 0x{x}\n\r", .{boot_info.fb_info.base});
 
-	// video.initialize();
-	// shell.initialize(boot_info.runtime_services);
-	//while (true) {
-		// shell.periodic();
-		//cpu.hlt();
-	//}
+	video.initialize(&boot_info.fb_info);
+	shell.initialize(boot_info.runtime_services);
+	while (true) {
+		shell.periodic();
+		cpu.hlt();
+	}
 }

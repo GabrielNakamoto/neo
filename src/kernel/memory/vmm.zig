@@ -2,6 +2,7 @@ const std = @import("std");
 const uart = @import("../uart.zig");
 const uefi = @import("std").os.uefi;
 const bump = @import("./bump.zig");
+const buddy = @import("./buddy.zig");
 
 pub const PagingLevel = [512]u64;
 const PAGE_ADDR_MASK: u64 =  0x000ffffffffff000; // 52 bit, page aligned address
@@ -24,7 +25,7 @@ pub inline fn initialize() void {
 }
 
 inline fn get_level() u64 {
-	const ptr = bump.alloc(PagingLevel);
+	const ptr: *PagingLevel  = bump.alloc(PagingLevel);
 	@memset(ptr, 0);
 	return @intFromPtr(ptr);
 }

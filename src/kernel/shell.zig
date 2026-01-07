@@ -35,7 +35,6 @@ fn video_subscriber() void {
 pub fn periodic() void {
 	str[i] = '_';
 	video.fill_screen(0x0);
-	// video.putchar('X', 0);
-	// video.printf("{d:0>2}:{d:0>2}:{d:0>2}> {s}", .{time.hour, time.minute, time.second, str[0..i+1]});o
+	video.printf("{d:0>2}:{d:0>2}:{d:0>2}> {s}", .{time.hour, time.minute, time.second, str[0..i+1]});
 	video.render();
 }
