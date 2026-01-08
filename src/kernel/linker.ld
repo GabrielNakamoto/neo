@@ -26,6 +26,8 @@ SECTIONS {
 		. += 128K;
 		__bootstrap_mem_end = .;
 	}
+
+	. = ALIGN(4K);
 	__kernel_virtual_end = .;
 
 

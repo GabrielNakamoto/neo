@@ -65,8 +65,15 @@ export fn kmain(old_info: *shared.BootInfo) noreturn {
 	heap.init();
 
 	const x = heap.create(u32) catch unreachable;
+	const y = heap.create(u32) catch unreachable;
+	const z = heap.create(u32) catch unreachable;
 	x.* = 10;
 	uart.printf("First dynamic variable: {}\n\r", .{x.*});
+	heap.destroy(x);
+	heap.destroy(z);
+	heap.destroy(y);
+
+	_ = heap.create(u32) catch unreachable;
 
 	//video.initialize(&boot_info.fb_info);
 	//video.fill_screen(0x0);
