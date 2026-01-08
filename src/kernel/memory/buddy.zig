@@ -23,6 +23,7 @@ inline fn get_physical_start(subtree: u64, l: u64, node: u64) u64 {
 	return memory_region_start + (subtree*LEAF_COUNT + level_offset*pages)*PAGE_SIZE;
 }
 
+// TODO: remove Floating Point ops
 inline fn get_level(pages: u64) u6 {
 	var partition: f64 = @floatFromInt(LEAF_COUNT);
 	partition /= @floatFromInt(pages);
@@ -45,6 +46,7 @@ var memory_region_start: u64 = 0;
 var memory_region_size: u64 = 0;
 
 // Recursively checks if any child nodes are occupied
+// TODO: optimize, caching or something??
 fn is_free(level: usize, node: usize, subtree: usize) bool {
 	if (level == DEPTH) {
 		return free_trees[subtree][node] == 0;

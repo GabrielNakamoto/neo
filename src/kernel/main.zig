@@ -64,16 +64,18 @@ export fn kmain(old_info: *shared.BootInfo) noreturn {
 	vmm.initialize(&boot_info);
 	heap.init();
 
-	const x = heap.create(u32) catch unreachable;
-	const y = heap.create(u32) catch unreachable;
-	const z = heap.create(u32) catch unreachable;
-	x.* = 10;
-	uart.printf("First dynamic variable: {}\n\r", .{x.*});
-	heap.destroy(x);
-	heap.destroy(z);
-	heap.destroy(y);
+	const x = heap.create([20]u64) catch unreachable;
+	const y = heap.create([20]u32) catch unreachable;
+	const z = heap.create([512]u64) catch unreachable;
 
-	_ = heap.create(u32) catch unreachable;
+	heap.debug_freelist();
+
+	heap.destroy(y);
+	heap.debug_freelist();
+	heap.destroy(x);
+	heap.debug_freelist();
+	heap.destroy(z);
+	heap.debug_freelist();
 
 	//video.initialize(&boot_info.fb_info);
 	//video.fill_screen(0x0);

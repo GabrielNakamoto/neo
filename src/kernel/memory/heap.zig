@@ -5,23 +5,23 @@ const paging = @import("./vmm.zig");
 const layout = @import("../layout.zig");
 const uart = @import("../uart.zig");
 
-const Block = packed struct {
+const Block = struct {
 	size: u32,
 	is_free: bool,
-	next: ?*volatile Block,
+	next: ?RawPtr,
 
-	const Self = @This();
+	const RawPtr = *volatile Block;
 
-	inline fn buffer(self: *volatile Self) *u8 {
+	inline fn buffer(self: RawPtr) *u8 {
 		return &@as([*]u8, @ptrCast(@volatileCast(self)))[@sizeOf(Block)];
 	}
 
-	inline fn joinable(left: *volatile Block, right: *volatile Block) bool {
+	inline fn joinable(left: RawPtr, right: RawPtr) bool {
 		return @intFromPtr(left) + left.size + @sizeOf(Block) == @intFromPtr(right);
 	}
 
 	// Returns ptr to new free block, this block becomes allocated one
-	fn split(self: *volatile Self, requested: u32) *volatile Block {
+	fn split(self: RawPtr, requested: u32) RawPtr {
 		const base: [*]u8 = @ptrCast(@volatileCast(self));
 		const free: *volatile Block = @ptrCast(@alignCast(&base[requested + @sizeOf(Block)]));
 
@@ -36,24 +36,25 @@ const Block = packed struct {
 		return free;
 	}
 
-	fn try_join_right(self: *volatile Self, other: *volatile Block) bool {
-		if (! self.joinable(other)) return false;
+	fn try_join_right(self: RawPtr, other: RawPtr) RawPtr {
+		if (! self.joinable(other)) return other;
 
 		self.size += other.size + @sizeOf(Block);
-		if (! other.is_free) {
+		if (other.is_free) {
 			self.next = other.next;
 		}
 		
-		uart.printf("Coalesced into new block: addr=0x{x}, size={}\n\r", .{@intFromPtr(self), self.size});
-		return true;
+		uart.printf("[Heap] Coalesced block: addr=0x{x}, size={}\n\r", .{@intFromPtr(self), self.size});
+		return self;
 	}
 };
 
-var head: *volatile Block = undefined;
+var head: Block.RawPtr = undefined;
+var heap_size: usize = 0;
 
-fn find_first_fit(size: usize) ?struct { last: ?*volatile Block, found: *volatile Block } {
-	var block: ?*volatile Block = head;
-	var last: ?*volatile Block = null;
+fn find_first_fit(size: usize) ?struct { last: ?Block.RawPtr, found: Block.RawPtr } {
+	var block: ?Block.RawPtr = head;
+	var last: ?Block.RawPtr = null;
 
 	while (block) |b| {
 		if (b.is_free and b.size >= size + @sizeOf(Block)) {
@@ -68,26 +69,51 @@ fn find_first_fit(size: usize) ?struct { last: ?*volatile Block, found: *volatil
 	return null;
 }
 
-pub fn init() void {
-	const mem = buddy.alloc(1);
+fn expand(n: u32) Block.RawPtr {
+	const mem = buddy.alloc(n);
 	const paddr = @intFromPtr(mem.ptr);
-	const vaddr = layout.kernelHeapStart();
-	paging.map_pages(paddr, 1, vaddr - paddr);
+	const vaddr = layout.kernelHeapStart() + heap_size;
+	paging.map_pages(paddr, n, vaddr - paddr);
+	@memset(@as([*]u8, @ptrFromInt(vaddr))[0..n*4096], 0);
 
-	@memset(@as([*]u8, @ptrFromInt(vaddr))[0..4096], 0);
-	head = @ptrFromInt(vaddr);
-	head.size = 4096 - @sizeOf(Block);
-	head.next = null;
-	head.is_free = true;
+	const block: Block.RawPtr = @ptrFromInt(vaddr);
+	block.size = n*4096 - @sizeOf(Block);
+	block.next = null;
+	block.is_free = true;
 
-	uart.printf("[Heap] Block header size: {}\n\r", .{@sizeOf(Block)});
-	uart.printf("[Heap] Initialized heap at vaddr: 0x{x}\n\r", .{vaddr});
+	heap_size += n*4096;
+	uart.printf("[Heap] Expansion block: addr=0x{x}, size={}\n\r", .{@intFromPtr(block), block.size});
+	return block;
 }
 
-// - keep track of virtual address space
-// - manage dynamic size allocations and free memory within address space
+pub fn debug_freelist() void {
+	uart.print("[Heap] free list:\n\r");
+	uart.printf("Head -> 0x{x} ({})\n\r", .{@intFromPtr(head), head.size});
+	var block = head;
+	while (block.next) |b| {
+		uart.printf("Iter -> 0x{x} ({})\n\r", .{@intFromPtr(b), b.size});
+		block = b;
+	}
+}
+
+pub fn init() void {
+	head = expand(1);
+	uart.printf("[Heap] Block header size: {}\n\r", .{@sizeOf(Block)});
+	uart.printf("[Heap] Initialized heap at vaddr: 0x{x}\n\r", .{@intFromPtr(head)});
+}
+
 pub fn create(comptime T: type) !*T {
-	const result = find_first_fit(@sizeOf(T));
+	var result = find_first_fit(@sizeOf(T));
+	if (result == null) {
+		var last = head;
+		while (last.next) |b| : (last=b) {}
+
+		const n = (@sizeOf(T) + 4095) / 4096;
+		const expansion = expand(n);
+		last.next = expansion;
+		_ = last.try_join_right(expansion);
+		result = find_first_fit(@sizeOf(T));
+	}
 
 	if (result) |block| {
 		const free = block.found.split(@sizeOf(T));
@@ -102,6 +128,7 @@ pub fn create(comptime T: type) !*T {
 		uart.printf("[Heap] Returning heap pointer to: 0x{x}\n\r", .{@intFromPtr(ptr)});
 		return ptr;
 	} else {
+		// expand
 		return error.MemoryNotFound;
 	}
 
@@ -118,14 +145,14 @@ pub fn destroy(ptr: anytype) void {
 	uart.printf("[Heap] Freeing block: addr=0x{x}, size={}\n\r", .{@intFromPtr(freed_block), freed_block.size});
 	std.debug.assert(freed_block.is_free);
 
-	// check siblings for coalescence
+	// Check siblings for coalescence
 	if (@intFromPtr(freed_block) < @intFromPtr(head)) {
 		freed_block.next = head;
 		_ = freed_block.try_join_right(head);
 		head = freed_block;
 	} else {
-		var left: *volatile Block = head;
-		var right: *volatile Block = head;
+		var left: Block.RawPtr = head;
+		var right: Block.RawPtr = head;
 		while (right.next) |b| {
 			left = right;
 			right = b;
@@ -133,11 +160,9 @@ pub fn destroy(ptr: anytype) void {
 		}
 		left.next = freed_block;
 
+		const head_changed = head == left;
 		const joined = left.try_join_right(freed_block);
-		if (joined) {
-			_ = left.try_join_right(right);
-		} else {
-			_ = freed_block.try_join_right(right);
-		}
+		if (head_changed) head = joined;
+		_ = joined.try_join_right(right);
 	}
 }
