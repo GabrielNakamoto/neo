@@ -1,7 +1,6 @@
 const std = @import("std");
 const uefi = std.os.uefi;
-const mem = @import("../memory/mem.zig");
-const vmm = @import("../memory/vmm.zig");
+const heap = @import("../memory/heap.zig");
 const uart = @import("../uart.zig");
 const shared = @import("shared");
 

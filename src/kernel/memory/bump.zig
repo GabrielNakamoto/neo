@@ -6,6 +6,7 @@ const layout = @import("../layout.zig");
 pub var fbase: usize = 0;
 pub var ftop: usize = 0;
 
+// Update to use firmware memory regions and save what regions I have reserved
 pub fn initialize(kernel_paddr: u64) void {
 	fbase = kernel_paddr + layout.bootstrapMemStart() - layout.kernelVirtStart();
 	ftop = kernel_paddr + layout.bootstrapMemEnd() - layout.kernelVirtStart();
@@ -19,6 +20,5 @@ pub fn alloc(comptime T: type) *T {
 	const value: *T = @ptrFromInt(fbase);
 	fbase += bytes;
 
-	uart.printf("[Bump] allocated {} bytes, {} remaining\n\r", .{bytes, ftop-fbase});
 	return value;
 }

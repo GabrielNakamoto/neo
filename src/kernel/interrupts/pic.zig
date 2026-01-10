@@ -35,9 +35,7 @@ pub fn initialize() void {
 }
 
 pub inline fn end_irq(irq_line: u8) void {
-	if (irq_line >= 8) {
-		cpu.out(PIC2_COMMAND, PIC_EOI);
-	}
+	if (irq_line >= 8) cpu.out(PIC2_COMMAND, PIC_EOI);
 	cpu.out(PIC1_COMMAND, PIC_EOI);
 }
 

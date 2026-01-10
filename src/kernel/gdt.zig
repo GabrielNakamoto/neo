@@ -16,6 +16,8 @@ const GDTDescriptor = packed struct {
 	offset: u64
 };
 
+pub const KERNEL_SEL = 0x8;
+
 const GDT = packed struct {
 	null_descriptor: SegmentDescriptor,
 	kernel_code: SegmentDescriptor,

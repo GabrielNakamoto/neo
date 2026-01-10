@@ -102,13 +102,13 @@ pub fn alloc(pages: u64) []PageFrame {
 	// start with linear search
 	const l = get_level(pages);
 	const range_start, const range_end_inclusive = get_level_range(@intCast(l));
-	uart.printf("[Buddy] Searching for {} pages at level {} through range {}->{}\n\r", .{pages, l, range_start, range_end_inclusive});
+	// uart.printf("[Buddy] Searching for {} pages at level {} through range {}->{}\n\r", .{pages, l, range_start, range_end_inclusive});
 	for (0..actual_width) |w| {
 		for (range_start..range_end_inclusive) |i| {
 			// (1) Check if any child nodes are occupied?
 			if (is_free(l, i, w)) {
 				// (2) Propogate occupation upwards and downwards
-					uart.printf("[Buddy] Found free node, subtree={}, level={} index={}\n\r", .{w, l, i});
+					// uart.printf("[Buddy] Found free node, subtree={}, level={} index={}\n\r", .{w, l, i});
 					free_trees[w][i]=1;
 					// Set sub nodes to allocated
 					for (l+1..DEPTH+1) |sl| {

@@ -5,6 +5,15 @@ const paging = @import("./vmm.zig");
 const layout = @import("../layout.zig");
 const uart = @import("../uart.zig");
 
+// TODO:
+// - make this doubly linked list for easier semantics
+// - check for alignment
+
+// Spacial vs temporal efficiency
+// Make each block contain 4 ptrs:
+// - prev and next block (allocatedd? or just both)
+// - prev and next free block
+
 const Block = struct {
 	size: u32,
 	is_free: bool,
@@ -43,8 +52,6 @@ const Block = struct {
 		if (other.is_free) {
 			self.next = other.next;
 		}
-		
-		uart.printf("[Heap] Coalesced block: addr=0x{x}, size={}\n\r", .{@intFromPtr(self), self.size});
 		return self;
 	}
 };
@@ -82,27 +89,25 @@ fn expand(n: u32) Block.RawPtr {
 	block.is_free = true;
 
 	heap_size += n*4096;
-	uart.printf("[Heap] Expansion block: addr=0x{x}, size={}\n\r", .{@intFromPtr(block), block.size});
 	return block;
 }
 
 pub fn debug_freelist() void {
-	uart.print("[Heap] free list:\n\r");
-	uart.printf("Head -> 0x{x} ({})\n\r", .{@intFromPtr(head), head.size});
+	uart.print("Heap free list:\n\r");
+	uart.printf("\tHead -> 0x{x} ({})\n\r", .{@intFromPtr(head), head.size});
 	var block = head;
 	while (block.next) |b| {
-		uart.printf("Iter -> 0x{x} ({})\n\r", .{@intFromPtr(b), b.size});
+		uart.printf("\tIter -> 0x{x} ({})\n\r", .{@intFromPtr(b), b.size});
 		block = b;
 	}
 }
 
 pub fn init() void {
 	head = expand(1);
-	uart.printf("[Heap] Block header size: {}\n\r", .{@sizeOf(Block)});
-	uart.printf("[Heap] Initialized heap at vaddr: 0x{x}\n\r", .{@intFromPtr(head)});
+	uart.printf("Initialized heap at vaddr: 0x{x}\n\r", .{@intFromPtr(head)});
 }
 
-pub fn create(comptime T: type) !*T {
+pub fn create(T: type) !*T {
 	var result = find_first_fit(@sizeOf(T));
 	if (result == null) {
 		var last = head;
@@ -122,10 +127,8 @@ pub fn create(comptime T: type) !*T {
 		} else {
 			head = free;
 		}
-		uart.printf("[Heap] Found block with enough space: 0x{x}, size={}\n\r", .{@intFromPtr(block.found), block.found.size});
 
 		const ptr: *T = @ptrCast(@alignCast(block.found.buffer()));
-		uart.printf("[Heap] Returning heap pointer to: 0x{x}\n\r", .{@intFromPtr(ptr)});
 		return ptr;
 	} else {
 		// expand
@@ -142,7 +145,6 @@ pub fn destroy(ptr: anytype) void {
 	const freed_block: *Block = @ptrCast(@alignCast(freed_ptr));
 	freed_block.is_free = true;
 
-	uart.printf("[Heap] Freeing block: addr=0x{x}, size={}\n\r", .{@intFromPtr(freed_block), freed_block.size});
 	std.debug.assert(freed_block.is_free);
 
 	// Check siblings for coalescence

@@ -10,8 +10,6 @@ const shared = @import("shared");
 var boot_services: *uefi.tables.BootServices = undefined;
 var runtime_services: *uefi.tables.RuntimeServices = undefined;
 
-const BOOTSTRAP_PAGES_SIZE = 16; //~65kb
-
 inline fn hlt() void {
 	asm volatile("hlt");
 }
@@ -82,7 +80,7 @@ fn bootloader() !void {
 	const root_filesystem = try fsp.?.openVolume();
 
 	// Allocate boot info
-	const boot_info: *shared.BootInfo = @ptrCast(@alignCast((try boot_services.allocatePool(.loader_data, @sizeOf(shared.BootInfo))).ptr));
+	const boot_info: *shared.BootInfo = @ptrCast(try boot_services.allocatePool(.loader_data, @sizeOf(shared.BootInfo)));
 	boot_info.runtime_services = runtime_services;
 
 	// Load kernel segments
@@ -97,7 +95,6 @@ fn bootloader() !void {
 
 	const final_mmap_buffer: [*]u8 = @ptrCast(try boot_services.allocatePages(.any, .loader_data, 2));
 	try paging.map_pages(@intFromPtr(final_mmap_buffer), 2, 0);
-
 	try get_fb_info(&boot_info.fb_info);
 
  	// Identity map relevant memory map sections

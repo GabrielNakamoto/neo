@@ -3,6 +3,7 @@ const idt = @import("./idt.zig");
 const cpu = @import("../cpu.zig");
 const uart = @import("../uart.zig");
 const pic = @import("./pic.zig");
+const gdt = @import("../gdt.zig");
 
 // https://wiki.osdev.org/Exceptions
 const exception_names: [32][]const u8 = .{
@@ -126,7 +127,6 @@ export fn intCommon() callconv(.naked) void {
 
 	asm volatile(
 		\\add $16, %%rsp
-		// TODO: This causes stack fault
 		\\iretq
 	);
 }
@@ -151,6 +151,6 @@ pub fn generateIsr(comptime vector: u64) IsrFn {
 pub fn install() void {
 	inline for (0..48) |i| {
 		const fn_ptr = generateIsr(i);
-		idt.set_gate(i, 0x8, @intFromPtr(fn_ptr), idt.INTERRUPT_GATE);
+		idt.set_gate(i, gdt.KERNEL_SEL, @intFromPtr(fn_ptr), idt.INTERRUPT_GATE);
 	}
 }

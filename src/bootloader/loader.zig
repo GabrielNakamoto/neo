@@ -6,8 +6,6 @@ const paging = @import("./paging.zig");
 
 var boot_services: *uefi.tables.BootServices = undefined;
 
-// Allocates a buffer from UEFI boot service memory pool 
-// Then fills it with bytes read from file starting at provided position
 fn allocate_and_read(
 	file: *uefi.protocol.File,
 	comptime allocate_type: uefi.tables.MemoryType,
@@ -16,7 +14,10 @@ fn allocate_and_read(
 ) ![]u8 {
 	try file.setPosition(position);
 	const buffer = try boot_services.allocatePool(allocate_type, size);
-	_ = try file.read(buffer);
+	const read = try file.read(buffer);
+	if (read != size) {
+		return error.SmallRead;
+	}
 	return buffer;
 }
 
@@ -27,10 +28,8 @@ pub fn load_kernel_image(
 	kernel_paddr: *u64,
 	kernel_size: *u64,
 ) !void {
-	// Populate runtime UEFI pointers
 	boot_services = uefi.system_table.boot_services.?;
 
-	// Locate kernel image
 	var kernel = root_filesystem.open(kernel_path, .read, .{.read_only = true}) catch |err| {
 		console.print("Error: locating kernel image in filesystem");
 		return err;
@@ -38,13 +37,21 @@ pub fn load_kernel_image(
 	defer kernel.close() catch {};
 	console.print("Located kernel image");
 
-	// Load ELF header and program headers into memory
-	const ehdr_buffer = try allocate_and_read(kernel, .boot_services_data, 0, 64);
+	const ehdr_buffer = try allocate_and_read(kernel, .boot_services_data, 0, @sizeOf(elf.Elf64.Ehdr));
+	defer boot_services.freePool(@alignCast(ehdr_buffer.ptr)) catch unreachable;
 	const ehdr = std.mem.bytesAsValue(elf.Elf64.Ehdr, ehdr_buffer);
 
+	// Verify target
+	if (!std.mem.eql(u8, ehdr.ident[0..4], &[_]u8{ 0x7f, 'E', 'L', 'F' })) return error.ElfNotMagic;
+	if (ehdr.ident[elf.EI.CLASS] != elf.ELFCLASS64) return error.ElfNot64;
+	if (ehdr.machine != .X86_64) return error.ElfNotx86_64;
+
 	const phdrs_buffer = try allocate_and_read(kernel, .boot_services_data, ehdr.phoff, ehdr.phentsize * ehdr.phnum);
-	const phdrs: [*]elf.Elf64.Phdr = @ptrCast(@alignCast(phdrs_buffer)); // Kinda unsafe
-	const phdrs_slice = phdrs[0..ehdr.phnum];
+	defer boot_services.freePool(@alignCast(phdrs_buffer.ptr)) catch unreachable;
+	const phdrs_slice = std.mem.bytesAsSlice(
+		elf.Elf64.Phdr,
+		phdrs_buffer
+	);
 
 	kernel_entry_vaddr.* = ehdr.entry;
 	console.printf("Kernel entry: 0x{x}", .{ehdr.entry});
@@ -56,9 +63,9 @@ pub fn load_kernel_image(
 		kernel_virt_base = @min(kernel_virt_base, phdr.vaddr);
 		kernel_virt_end = @max(kernel_virt_end, phdr.vaddr+phdr.memsz);
 	}
-	const kernel_load_size = ((kernel_virt_end - kernel_virt_base) + 4095) / 4096;
 
-	const kernel_buffer: []u8 = @ptrCast(@alignCast(try boot_services.allocatePages(.any, .loader_data, kernel_load_size)));
+	const kernel_load_size = ((kernel_virt_end - kernel_virt_base) + 4095) / 4096;
+	const kernel_buffer: []u8 = @ptrCast(try boot_services.allocatePages(.any, .loader_data, kernel_load_size));
 	const kernel_phys_base = @intFromPtr(kernel_buffer.ptr);
 	kernel_paddr.* = kernel_phys_base;
 	kernel_size.* = kernel_load_size;
@@ -67,13 +74,13 @@ pub fn load_kernel_image(
 		if (phdr.type != .LOAD) continue;
 
 		const segment_offset = phdr.vaddr - kernel_virt_base;
-		const segment_buffer = 	kernel_buffer[segment_offset..segment_offset+phdr.filesz];
+		const segment_buffer = kernel_buffer[segment_offset..segment_offset+phdr.filesz];
 
 		try kernel.setPosition(phdr.offset);
 		_ = try kernel.read(segment_buffer);
 
-		const bss_buffer = kernel_buffer[segment_offset+phdr.filesz..segment_offset+phdr.memsz];
-		@memset(bss_buffer, 0);
+		const remaining = kernel_buffer[segment_offset+phdr.filesz..segment_offset+phdr.memsz];
+		@memset(remaining, 0);
 	}
 
 	console.print("Mapping kernel");

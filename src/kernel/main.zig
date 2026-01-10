@@ -60,6 +60,7 @@ export fn kmain(old_info: *shared.BootInfo) noreturn {
 
 	keyboard.initialize();
 
+
 	pmm.initialize(&boot_info);
 	vmm.initialize(&boot_info);
 	heap.init();
